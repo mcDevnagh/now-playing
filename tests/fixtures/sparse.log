@@ -1,0 +1,4 @@
+00:00:00	{"id":1,"jsonrpc":"2.0","result":{"server":{"groups":[{"id":"group-htpc","stream_id":"Pipe-HTPC","clients":[{"id":"HTPC","connected":true,"host":{"name":"htpc"}}]}],"streams":[{"id":"Pipe-HTPC","status":"playing","properties":{"metadata":{"title":"Track S"}}}]}}}
+00:00:10	{"jsonrpc":"2.0","method":"Stream.OnProperties","params":{"id":"Pipe-HTPC","properties":{"metadata":{}}}}
+00:00:20	{"jsonrpc":"2.0","method":"Stream.OnProperties","params":{"id":"Pipe-HTPC","properties":{"metadata":{"title":"Track T"}}}}
+00:00:30	{"jsonrpc":"2.0","method":"Stream.OnUpdate","params":{"id":"Pipe-HTPC","stream":{"id":"Pipe-HTPC","status":"idle"}}}

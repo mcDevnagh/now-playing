@@ -1,57 +1,16 @@
 use super::*;
-use crate::fixtures::{BUILTIN_LOG, BUILTIN_STATUS, META_LOG, meta_status, status};
-use crate::snapcast::{Server, Stream};
-use serde_json::Value;
+use crate::fixtures::{
+    BUILTIN_LOG, BUILTIN_STATUS, META_LOG, meta_status, replay, status, summary,
+};
+use crate::snapcast::Stream;
 
-/// Replays a captured log (`time<TAB>json` per line) and returns the HTPC's
-/// state after each line. Notifications are applied the simple way the
-/// snapcast module will: `OnUpdate` replaces the stream, `OnProperties`
-/// replaces its properties.
-fn replay(log: &str) -> Vec<State> {
-    let mut server = Server::default();
-    log.lines()
-        .map(|line| {
-            let (_, json) = line.split_once('\t').unwrap();
-            let msg: Value = serde_json::from_str(json).unwrap();
-            apply(&mut server, &msg);
-            server.stream_for("HTPC").map_or(State::Idle, now_playing)
-        })
-        .collect()
-}
-
-fn apply(server: &mut Server, msg: &Value) {
-    if let Some(result) = msg.get("result") {
-        *server = serde_json::from_value(result["server"].clone()).unwrap();
-        return;
-    }
-    let params = &msg["params"];
-    match msg["method"].as_str().unwrap() {
-        "Stream.OnUpdate" => {
-            let new: Stream = serde_json::from_value(params["stream"].clone()).unwrap();
-            let old = server.streams.iter_mut().find(|s| s.id == new.id).unwrap();
-            *old = new;
-        }
-        "Stream.OnProperties" => {
-            let id = params["id"].as_str().unwrap();
-            let stream = server.streams.iter_mut().find(|s| s.id == id).unwrap();
-            stream.properties = serde_json::from_value(params["properties"].clone()).unwrap();
-        }
-        other => panic!("unexpected {other}"),
-    }
+fn states(log: &str) -> Vec<State> {
+    replay(log).into_iter().map(|(_, state)| state).collect()
 }
 
 /// The HTPC's stream at the start of `META_LOG`.
 fn meta_stream() -> Stream {
     meta_status().streams.remove(0)
-}
-
-/// Title, playing or paused, and position, for compact assertions.
-fn summary(state: &State) -> Option<(&str, bool, Option<f64>)> {
-    match state {
-        State::Idle => None,
-        State::Playing(t) => Some((&t.title, true, t.position)),
-        State::Paused(t) => Some((&t.title, false, t.position)),
-    }
 }
 
 #[test]
@@ -74,7 +33,7 @@ fn full_metadata() {
 
 #[test]
 fn meta_librespot_session() {
-    let states = replay(META_LOG);
+    let states = states(META_LOG);
     let summaries: Vec<_> = states.iter().map(summary).collect();
     assert_eq!(
         summaries,
@@ -104,7 +63,7 @@ fn meta_librespot_session() {
 #[test]
 fn sparse_source_follows_stream_status() {
     // The built-in librespot source: no playbackStatus, no position.
-    let states = replay(BUILTIN_LOG);
+    let states = states(BUILTIN_LOG);
     let summaries: Vec<_> = states.iter().map(summary).collect();
     assert_eq!(
         summaries,
