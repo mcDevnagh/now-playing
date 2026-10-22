@@ -3,6 +3,8 @@
 //! The main thread sleeps in `SDL_WaitEvent`. It wakes for input and window
 //! events, for a user event pushed when a new state or cover arrives, and
 //! once a second for the progress bar, but only while playing and focused.
+//! Only during a fade (`FADE`, after a change of what's on screen) does it
+//! draw every frame.
 
 use std::ptr;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -22,6 +24,7 @@ use crate::art::{self, Cover, Fetcher, Image};
 use crate::state::{State, Track};
 
 const TICK: Duration = Duration::from_secs(1);
+const FADE: Duration = Duration::from_millis(400);
 const PAUSED_OPACITY: f32 = 0.35;
 /// How much the blurred background is darkened: to 35% brightness, as on
 /// the old web page.
@@ -124,6 +127,9 @@ pub fn run(art_host: &str, source: impl FnOnce(Updates) + Send + 'static) -> Res
         requested: None,
         failed: None,
         cover: None,
+        cover_id: 0,
+        visible: false,
+        fade: None,
     };
     event_loop(&sdl, &mut canvas, &mut screen, &rx, kind)
 }
@@ -165,6 +171,8 @@ fn event_loop(
     let mut next_tick = None;
     loop {
         let visible = focused && shown;
+        screen.set_visible(visible);
+        let fading = visible && screen.fading();
         next_tick = match next_tick {
             _ if !(visible && screen.progressing()) => None,
             Some(tick) if Instant::now() >= tick => {
@@ -174,18 +182,21 @@ fn event_loop(
             Some(tick) => Some(tick),
             None => Some(Instant::now() + TICK),
         };
-        if visible && dirty {
+        if visible && (dirty || fading) {
             screen.draw(canvas)?;
             dirty = false;
         }
         let event = match next_tick {
+            // Drawing waits for vsync, which paces the fade.
+            _ if fading => pump.poll_event(),
             Some(tick) => {
                 let wait = tick.saturating_duration_since(Instant::now());
                 pump.wait_event_timeout(wait.as_millis().max(1) as u32)
             }
             None => Some(pump.wait_event()),
         };
-        // No event: the tick is due, which the top of the loop handles.
+        // No event: the tick is due or a fade goes on; the top of the loop
+        // handles both.
         let Some(event) = event else { continue };
         match event {
             Event::Quit { .. }
@@ -195,7 +206,7 @@ fn event_loop(
             } => return Ok(()),
             Event::User { type_, .. } if type_ == kind => {
                 for message in rx.try_iter() {
-                    screen.receive(message)?;
+                    screen.receive(canvas, message)?;
                     dirty = true;
                 }
             }
@@ -206,9 +217,18 @@ fn event_loop(
                     (shown, dirty) = (true, true)
                 }
                 WindowEvent::Hidden | WindowEvent::Minimized => shown = false,
-                WindowEvent::Exposed | WindowEvent::SizeChanged(..) => dirty = true,
+                WindowEvent::Exposed => dirty = true,
+                WindowEvent::SizeChanged(..) => {
+                    screen.cancel_fade();
+                    dirty = true;
+                }
                 _ => {}
             },
+            // The snapshot being faded out may have been lost.
+            Event::RenderTargetsReset { .. } | Event::RenderDeviceReset { .. } => {
+                screen.cancel_fade();
+                dirty = true;
+            }
             _ => {}
         }
     }
@@ -230,6 +250,33 @@ struct Screen<'t> {
     failed: Option<String>,
     /// The newest cover that loaded. Kept, and shown, while the next loads.
     cover: Option<CoverTextures<'t>>,
+    /// Counts covers loaded, to tell them apart.
+    cover_id: u64,
+    /// Whether the window can be seen. Changes while it can't don't fade.
+    visible: bool,
+    fade: Option<Fade<'t>>,
+}
+
+/// The screen as it was before a change, drawn over the new one with less
+/// and less opacity.
+struct Fade<'t> {
+    from: Texture<'t>,
+    start: Instant,
+}
+
+/// What a frame shows, ignoring the progress bar: when this changes, the
+/// screen fades.
+#[derive(PartialEq)]
+enum Look<'a> {
+    Black,
+    Track {
+        title: &'a str,
+        artists: &'a [String],
+        album: Option<&'a str>,
+        paused: bool,
+        /// Which cover, if one is shown.
+        cover: Option<u64>,
+    },
 }
 
 /// A laid-out track with its text rasterised. Kept until the track's text,
@@ -248,7 +295,11 @@ struct CoverTextures<'t> {
 }
 
 impl<'t> Screen<'t> {
-    fn receive(&mut self, message: Message) -> Result<(), String> {
+    /// Applies `message`, first starting a fade if it changes what's shown.
+    fn receive(&mut self, canvas: &mut WindowCanvas, message: Message) -> Result<(), String> {
+        if self.visible && canvas.render_target_supported() && self.changes_look(&message) {
+            self.start_fade(canvas)?;
+        }
         match message {
             Message::State(state) => self.set_state(state),
             Message::Cover(url, cover) => self.set_cover(url, cover)?,
@@ -278,6 +329,7 @@ impl<'t> Screen<'t> {
                     image: rgba_texture(self.creator, &cover.image)?,
                     blur: rgba_texture(self.creator, &cover.blur)?,
                 });
+                self.cover_id += 1;
                 self.failed = None;
             }
             Err(e) => {
@@ -286,6 +338,69 @@ impl<'t> Screen<'t> {
                 self.failed = Some(url);
             }
         }
+        Ok(())
+    }
+
+    fn set_visible(&mut self, visible: bool) {
+        self.visible = visible;
+        if !visible {
+            self.cancel_fade();
+        }
+    }
+
+    fn fading(&self) -> bool {
+        self.fade.is_some()
+    }
+
+    fn cancel_fade(&mut self) {
+        self.fade = None;
+    }
+
+    fn look<'a>(&self, state: &'a State) -> Look<'a> {
+        let (track, paused) = match state {
+            State::Idle => return Look::Black,
+            State::Playing(track) => (track, false),
+            State::Paused(track) => (track, true),
+        };
+        Look::Track {
+            title: &track.title,
+            artists: &track.artists,
+            album: track.album.as_deref(),
+            paused,
+            cover: self.shows_cover(track).then_some(self.cover_id),
+        }
+    }
+
+    fn changes_look(&self, message: &Message) -> bool {
+        match message {
+            Message::State(state) => self.look(state) != self.look(&self.state),
+            // A cover for the track on screen: it appears, replaces the
+            // previous track's, or (failed) goes.
+            Message::Cover(url, _) => self
+                .track()
+                .is_some_and(|(track, _)| track.art_url.as_ref() == Some(url)),
+        }
+    }
+
+    /// Renders the screen as it is now into a texture, to fade out over
+    /// whatever comes next. If a fade is already running, its current frame
+    /// is what fades out.
+    fn start_fade(&mut self, canvas: &mut WindowCanvas) -> Result<(), String> {
+        let (width, height) = canvas.output_size()?;
+        let mut from = self
+            .creator
+            .create_texture_target(canvas.default_pixel_format(), width, height)
+            .map_err(|e| e.to_string())?;
+        let mut drawn = Ok(());
+        canvas
+            .with_texture_canvas(&mut from, |target| drawn = self.draw_frame(target))
+            .map_err(|e| e.to_string())?;
+        drawn?;
+        from.set_blend_mode(BlendMode::Blend);
+        self.fade = Some(Fade {
+            from,
+            start: Instant::now(),
+        });
         Ok(())
     }
 
@@ -309,6 +424,14 @@ impl<'t> Screen<'t> {
     }
 
     fn draw(&mut self, canvas: &mut WindowCanvas) -> Result<(), String> {
+        self.draw_frame(canvas)?;
+        canvas.present();
+        Ok(())
+    }
+
+    /// Draws the current frame, and the fading one over it, without
+    /// presenting: `canvas` may be a texture.
+    fn draw_frame(&mut self, canvas: &mut WindowCanvas) -> Result<(), String> {
         canvas.set_draw_color(Color::BLACK);
         canvas.clear();
         if let Some((track, opacity)) = self.track() {
@@ -321,7 +444,16 @@ impl<'t> Screen<'t> {
             let cover = self.cover.as_mut().filter(|_| with_cover);
             draw_scene(canvas, scene, cover, opacity, progress)?;
         }
-        canvas.present();
+        if let Some(fade) = &mut self.fade {
+            let done = fade.start.elapsed().as_secs_f32() / FADE.as_secs_f32();
+            if done < 1.0 {
+                fade.from
+                    .set_alpha_mod((255.0 * (1.0 - done)).round() as u8);
+                canvas.copy(&fade.from, None, None)?;
+            } else {
+                self.fade = None;
+            }
+        }
         Ok(())
     }
 
