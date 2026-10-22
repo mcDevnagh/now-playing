@@ -1,12 +1,9 @@
 use super::*;
+use crate::fixtures::{BUILTIN_LOG, BUILTIN_STATUS, META_LOG, meta_status, status};
 use crate::snapcast::{Server, Stream};
 use serde_json::Value;
 
-const META_LOG: &str = include_str!("../../tests/fixtures/meta-librespot-events.log");
-const BUILTIN_LOG: &str = include_str!("../../tests/fixtures/builtin-events.log");
-const BUILTIN_STATUS: &str = include_str!("../../tests/fixtures/builtin-status.json");
-
-/// Replays a captured log (`time<TAB>json` per line) and returns the
+/// Replays a captured log (`time<TAB>json` per line) and returns the HTPC's
 /// state after each line. Notifications are applied the simple way the
 /// snapcast module will: `OnUpdate` replaces the stream, `OnProperties`
 /// replaces its properties.
@@ -17,7 +14,7 @@ fn replay(log: &str) -> Vec<State> {
             let (_, json) = line.split_once('\t').unwrap();
             let msg: Value = serde_json::from_str(json).unwrap();
             apply(&mut server, &msg);
-            now_playing(&server, "HTPC")
+            server.stream_for("HTPC").map_or(State::Idle, now_playing)
         })
         .collect()
 }
@@ -43,13 +40,9 @@ fn apply(server: &mut Server, msg: &Value) {
     }
 }
 
-fn server(json: &str) -> Server {
-    let msg: Value = serde_json::from_str(json).unwrap();
-    serde_json::from_value(msg["result"]["server"].clone()).unwrap()
-}
-
-fn meta_status() -> Server {
-    server(META_LOG.lines().next().unwrap().split_once('\t').unwrap().1)
+/// The HTPC's stream at the start of `META_LOG`.
+fn meta_stream() -> Stream {
+    meta_status().streams.remove(0)
 }
 
 /// Title, playing or paused, and position, for compact assertions.
@@ -63,7 +56,7 @@ fn summary(state: &State) -> Option<(&str, bool, Option<f64>)> {
 
 #[test]
 fn full_metadata() {
-    let State::Playing(track) = now_playing(&meta_status(), "HTPC") else {
+    let State::Playing(track) = now_playing(&meta_stream()) else {
         panic!("not playing");
     };
     assert_eq!(
@@ -136,61 +129,23 @@ fn sparse_source_follows_stream_status() {
 
 #[test]
 fn idle_stream_without_playback_status() {
-    assert_eq!(now_playing(&server(BUILTIN_STATUS), "HTPC"), State::Idle);
-}
-
-#[test]
-fn client_matching() {
-    let mut server = meta_status();
-    assert!(matches!(now_playing(&server, "htpc"), State::Playing(_)));
-    assert_eq!(now_playing(&server, "Kitchen"), State::Idle);
-    // A connected client in a group whose stream doesn't exist.
-    assert_eq!(server.groups[0].clients[0].host.name, "phone");
-    server.groups[0].clients[0].connected = true;
-    assert_eq!(now_playing(&server, "phone"), State::Idle);
-}
-
-#[test]
-fn host_name_matches_when_id_does_not() {
-    let mut server = meta_status();
-    server.groups[1].clients[0].id = "living-room".into();
-    assert!(matches!(now_playing(&server, "htpc"), State::Playing(_)));
-}
-
-#[test]
-fn disconnected_client_is_idle() {
-    let mut server = meta_status();
-    server.groups[1].clients[0].connected = false;
-    assert_eq!(now_playing(&server, "HTPC"), State::Idle);
-}
-
-#[test]
-fn follows_group_stream() {
-    let mut server = meta_status();
-    let mut other = server.streams[0].clone();
-    other.id = "Meta-HTPC".into();
-    other.properties.metadata.title = Some("Something Else".into());
-    server.streams.push(other);
-    server.groups[1].stream_id = "Meta-HTPC".into();
-    assert_eq!(
-        summary(&now_playing(&server, "HTPC")),
-        Some(("Something Else", true, Some(0.0)))
-    );
+    let stream = &status(BUILTIN_STATUS).streams[0];
+    assert_eq!(now_playing(stream), State::Idle);
 }
 
 #[test]
 fn missing_or_empty_fields() {
-    let mut server = meta_status();
-    let meta = &mut server.streams[0].properties.metadata;
+    let mut stream = meta_stream();
+    let meta = &mut stream.properties.metadata;
     meta.album = Some(String::new());
     meta.art_url = None;
     meta.duration = None;
-    let State::Playing(track) = now_playing(&server, "HTPC") else {
+    let State::Playing(track) = now_playing(&stream) else {
         panic!()
     };
     assert_eq!((track.album, track.art_url), (None, None));
     assert_eq!((track.position, track.duration), (None, None));
 
-    server.streams[0].properties.metadata.title = Some(String::new());
-    assert_eq!(now_playing(&server, "HTPC"), State::Idle);
+    stream.properties.metadata.title = Some(String::new());
+    assert_eq!(now_playing(&stream), State::Idle);
 }

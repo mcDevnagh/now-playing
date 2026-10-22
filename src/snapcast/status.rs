@@ -14,6 +14,31 @@ pub struct Server {
     pub streams: Vec<Stream>,
 }
 
+impl Server {
+    /// The stream `client` is playing: its group's stream.
+    ///
+    /// `client` is matched against client ids, first exactly, then ignoring
+    /// case, then against host names ignoring case. `None` if the client is
+    /// missing or disconnected, or its group's stream doesn't exist.
+    pub fn stream_for(&self, client: &str) -> Option<&Stream> {
+        let clients = || {
+            self.groups
+                .iter()
+                .flat_map(|g| g.clients.iter().map(move |c| (g, c)))
+        };
+        let matches: [&dyn Fn(&Client) -> bool; 3] = [
+            &|c| c.id == client,
+            &|c| c.id.eq_ignore_ascii_case(client),
+            &|c| c.host.name.eq_ignore_ascii_case(client),
+        ];
+        let (group, found) = matches.iter().find_map(|m| clients().find(|(_, c)| m(c)))?;
+        if !found.connected {
+            return None;
+        }
+        self.streams.iter().find(|s| s.id == group.stream_id)
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Group {
     pub id: String,
