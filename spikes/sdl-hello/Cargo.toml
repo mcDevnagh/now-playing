@@ -1,0 +1,11 @@
+[package]
+name = "sdl-hello"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+sdl2 = "0.38"
+
+[profile.release]
+strip = true

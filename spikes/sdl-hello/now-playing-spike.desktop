@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Now Playing (spike)
+Comment=Phase 0 SDL2 test window; logs to ~/.local/state/now-playing-spike.log
+Exec=@HOME@/.local/bin/now-playing-spike
+Icon=audio-x-generic
+Categories=AudioVideo;
