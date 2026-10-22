@@ -4,12 +4,12 @@
 use std::thread;
 use std::time::Duration;
 
-use super::{Action, Session, Stream};
+use crate::snapcast::{Action, Session, Stream};
 
 /// Feeds `log` (`HH:MM:SS<TAB>json` per line, as in `tests/fixtures/`) to a
 /// session following `client`, keeping the log's timing, and calls
-/// `on_stream` as `run` would. Returns at the end of the log.
-pub fn fake(log: &str, client: &str, mut on_stream: impl FnMut(Option<&Stream>)) {
+/// `on_stream` as `snapcast::run` would. Returns at the end of the log.
+pub fn replay(log: &str, client: &str, mut on_stream: impl FnMut(Option<&Stream>)) {
     let mut session = Session::new(client);
     let mut last = None;
     for line in log.lines() {
@@ -24,7 +24,7 @@ pub fn fake(log: &str, client: &str, mut on_stream: impl FnMut(Option<&Stream>))
         match session.handle(json) {
             Ok(Action::Resolved | Action::Changed) => on_stream(session.stream()),
             Ok(_) => {}
-            Err(e) => eprintln!("fake: {e}"),
+            Err(e) => eprintln!("replay: {e}"),
         }
     }
 }
