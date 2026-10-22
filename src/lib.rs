@@ -1,3 +1,4 @@
+pub mod art;
 #[cfg(debug_assertions)]
 pub mod debug;
 pub mod snapcast;

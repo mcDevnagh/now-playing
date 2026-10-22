@@ -71,7 +71,7 @@ fn ellipsize() {
 fn layout_with_art() {
     let fonts = Fonts::load();
     let (w, h) = SCREEN;
-    let l = layout(&fonts, &track(), SCREEN);
+    let l = layout(&fonts, &track(), true, SCREEN);
 
     let cover = l.cover.expect("cover");
     assert!((cover.w - 0.62 * h).abs() < 0.01);
@@ -100,11 +100,7 @@ fn layout_with_art() {
 #[test]
 fn layout_without_art_is_centred() {
     let fonts = Fonts::load();
-    let track = Track {
-        art_url: None,
-        ..track()
-    };
-    let l = layout(&fonts, &track, SCREEN);
+    let l = layout(&fonts, &track(), false, SCREEN);
     assert_eq!(l.cover, None);
     for line in &l.lines {
         let centre = line.x + line.width / 2.0;
@@ -123,7 +119,7 @@ fn layout_of_a_sparse_track() {
         position: None,
         duration: None,
     };
-    let l = layout(&fonts, &track, SCREEN);
+    let l = layout(&fonts, &track, false, SCREEN);
     assert_eq!(l.bar, None);
     assert_eq!(l.lines.len(), 3);
     assert!(l.lines.iter().all(|line| line.style == Style::Title));

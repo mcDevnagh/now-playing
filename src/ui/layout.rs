@@ -57,22 +57,27 @@ pub struct Line {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Layout {
-    /// Where the cover goes, if the track has art.
+    /// Where the cover goes, if one is shown.
     pub cover: Option<Rect>,
     pub lines: Vec<Line>,
     /// The whole progress bar, if the track has a position and duration.
     pub bar: Option<Rect>,
 }
 
-/// With art: the cover at 62vh on the left, the text block to its right.
-/// Without: the text block centred, each line centred. The text block is
-/// vertically centred either way.
-pub fn layout(fonts: &Fonts, track: &Track, (width, height): (f32, f32)) -> Layout {
+/// With a cover: the cover at 62vh on the left, the text block to its
+/// right. Without (the track has no art, or it failed to load): the text
+/// block centred, each line centred. The text block is vertically centred
+/// either way.
+pub fn layout(
+    fonts: &Fonts,
+    track: &Track,
+    with_cover: bool,
+    (width, height): (f32, f32),
+) -> Layout {
     let (vw, vh) = (width / 100.0, height / 100.0);
-    let has_art = track.art_url.is_some();
     let cover_side = 62.0 * vh;
     let gap = 5.0 * vw;
-    let text_width = if has_art {
+    let text_width = if with_cover {
         (48.0 * vw).min(width - 12.0 * vw - cover_side - gap)
     } else {
         72.0 * vw
@@ -128,7 +133,7 @@ pub fn layout(fonts: &Fonts, track: &Track, (width, height): (f32, f32)) -> Layo
     }
 
     let top = (height - y) / 2.0;
-    let (left, cover) = if has_art {
+    let (left, cover) = if with_cover {
         let left = (width - (cover_side + gap + text_width)) / 2.0;
         let cover = Rect {
             x: left,
@@ -141,7 +146,7 @@ pub fn layout(fonts: &Fonts, track: &Track, (width, height): (f32, f32)) -> Layo
         ((width - text_width) / 2.0, None)
     };
     for line in &mut lines {
-        let indent = if has_art {
+        let indent = if with_cover {
             0.0
         } else {
             (text_width - line.width) / 2.0
@@ -157,12 +162,11 @@ pub fn layout(fonts: &Fonts, track: &Track, (width, height): (f32, f32)) -> Layo
     Layout { cover, lines, bar }
 }
 
-/// Whether `a` and `b` lay out the same, so the text needn't be redrawn:
-/// only position may differ.
+/// Whether `a` and `b` lay out the same (given the same cover or none), so
+/// the text needn't be redrawn: only position and art may differ.
 pub fn same_layout(a: &Track, b: &Track) -> bool {
     a.title == b.title
         && a.artists == b.artists
         && a.album == b.album
-        && a.art_url.is_some() == b.art_url.is_some()
         && a.duration.is_some() == b.duration.is_some()
 }

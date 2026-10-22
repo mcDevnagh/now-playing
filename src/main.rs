@@ -45,7 +45,12 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let result = ui::run(move |mut updates| {
+    // Covers whose host doesn't resolve are fetched from the server's host.
+    let art_host = match args.server.rsplit_once(':') {
+        Some((host, _)) => host.to_owned(),
+        None => args.server.clone(),
+    };
+    let result = ui::run(&art_host, move |mut updates| {
         follow(&args, &client, |stream| {
             updates.send(stream.map_or(State::Idle, now_playing));
         });
