@@ -1,16 +1,38 @@
 use std::process::ExitCode;
 
-use now_playing::snapcast;
+use now_playing::snapcast::{self, Stream};
 use now_playing::state::{State, now_playing};
+use now_playing::ui;
 
 const DEFAULT_SERVER: &str = "192.168.1.160:1705";
-const USAGE: &str = "usage: now-playing [--server HOST:PORT] [--client ID] --print";
+const USAGE: &str = "usage: now-playing [--server HOST:PORT] [--client ID] [--fake LOG] [--print]";
 
 struct Args {
     server: String,
     /// `None`: this machine's hostname.
     client: Option<String>,
+    /// A log to replay instead of connecting (see `tests/fixtures/`).
+    fake: Option<String>,
+    /// Print state changes instead of opening the window.
     print: bool,
+}
+
+/// Where states come from.
+enum Source {
+    Server(String),
+    /// The contents of a log to replay.
+    Fake(String),
+}
+
+impl Source {
+    /// Feeds our client's stream to `on_stream`. Returns only at the end of
+    /// a fake log.
+    fn follow(&self, client: &str, on_stream: impl FnMut(Option<&Stream>)) {
+        match self {
+            Source::Server(addr) => snapcast::run(addr, client, on_stream),
+            Source::Fake(log) => snapcast::fake(log, client, on_stream),
+        }
+    }
 }
 
 fn main() -> ExitCode {
@@ -28,26 +50,49 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    if !args.print {
-        eprintln!("now-playing: there is no window yet; use --print\n{USAGE}");
-        return ExitCode::FAILURE;
+    let source = match args.fake {
+        Some(path) => match std::fs::read_to_string(&path) {
+            Ok(log) => Source::Fake(log),
+            Err(e) => {
+                eprintln!("now-playing: {path}: {e}");
+                return ExitCode::FAILURE;
+            }
+        },
+        None => Source::Server(args.server),
+    };
+
+    eprintln!("now-playing: following client {client}");
+    if args.print {
+        let mut shown = None;
+        source.follow(&client, |stream| {
+            let state = stream.map_or(State::Idle, now_playing);
+            if shown.as_ref() != Some(&state) {
+                println!("{}", describe(&state));
+                shown = Some(state);
+            }
+        });
+        return ExitCode::SUCCESS;
     }
 
-    eprintln!("now-playing: following client {client} on {}", args.server);
-    let mut shown = None;
-    snapcast::run(&args.server, &client, |stream| {
-        let state = stream.map_or(State::Idle, now_playing);
-        if shown.as_ref() != Some(&state) {
-            println!("{}", describe(&state));
-            shown = Some(state);
+    let result = ui::run(move |mut updates| {
+        source.follow(&client, |stream| {
+            updates.send(stream.map_or(State::Idle, now_playing));
+        });
+    });
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("now-playing: {e}");
+            ExitCode::FAILURE
         }
-    })
+    }
 }
 
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut parsed = Args {
         server: DEFAULT_SERVER.to_owned(),
         client: None,
+        fake: None,
         print: false,
     };
     while let Some(arg) = args.next() {
@@ -55,6 +100,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
         match arg.as_str() {
             "--server" => parsed.server = value()?,
             "--client" => parsed.client = Some(value()?),
+            "--fake" => parsed.fake = Some(value()?),
             "--print" => parsed.print = true,
             _ => return Err(format!("unknown argument {arg}")),
         }
