@@ -7,7 +7,7 @@
 use std::ptr;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use sdl2::event::{Event, EventSender, WindowEvent};
 use sdl2::keyboard::Keycode;
@@ -20,7 +20,7 @@ use super::layout::{self, Layout, Rect};
 use super::text::Fonts;
 use crate::state::{State, Track};
 
-const TICK_MS: u32 = 1000;
+const TICK: Duration = Duration::from_secs(1);
 const PAUSED_OPACITY: f32 = 0.35;
 const COVER_PLACEHOLDER: Color = Color::RGB(40, 40, 40);
 
@@ -106,21 +106,34 @@ fn event_loop(
     let mut focused = true;
     let mut shown = true;
     let mut dirty = true;
+    // When the progress bar next needs redrawing. A deadline, not a timeout
+    // per wait: other events (an air mouse's motion, say) would otherwise
+    // keep restarting the wait, and the bar would never move.
+    let mut next_tick = None;
     loop {
         let visible = focused && shown;
+        next_tick = match next_tick {
+            _ if !(visible && screen.progressing()) => None,
+            Some(tick) if Instant::now() >= tick => {
+                dirty = true;
+                Some(Instant::now() + TICK)
+            }
+            Some(tick) => Some(tick),
+            None => Some(Instant::now() + TICK),
+        };
         if visible && dirty {
             screen.draw(canvas)?;
             dirty = false;
         }
-        let event = if visible && screen.progressing() {
-            pump.wait_event_timeout(TICK_MS)
-        } else {
-            Some(pump.wait_event())
+        let event = match next_tick {
+            Some(tick) => {
+                let wait = tick.saturating_duration_since(Instant::now());
+                pump.wait_event_timeout(wait.as_millis().max(1) as u32)
+            }
+            None => Some(pump.wait_event()),
         };
-        let Some(event) = event else {
-            dirty = true; // the progress tick
-            continue;
-        };
+        // No event: the tick is due, which the top of the loop handles.
+        let Some(event) = event else { continue };
         match event {
             Event::Quit { .. }
             | Event::KeyDown {
