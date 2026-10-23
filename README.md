@@ -60,7 +60,7 @@ Fedora, `sdl2` on Arch, `libsdl2-dev` on Debian).
 
 ```
 cargo build --release
-cargo test --workspace
+cargo test
 ```
 
 The binary links the system libSDL2 and glibc, so build it against the
@@ -90,9 +90,11 @@ needed. Launch it from Gaming Mode like any game.
 | `core/src/state/` | What to show, from a stream's properties |
 | `core/src/net.rs` | TCP keepalive and reconnect backoff |
 | `core/tests/fixtures/` | Captured and hand-written snapserver logs |
-| `src/ui/` | The window, text layout and drawing |
-| `src/art/` | Fetching and decoding covers |
-| `src/debug/` | `--print` and `--fake`, debug builds only |
+| `app/` | The `now-playing` crate: the full-screen app |
+| `app/src/ui/` | The window, text layout and drawing |
+| `app/src/art/` | Fetching and decoding covers |
+| `app/src/debug/` | `--print` and `--fake`, debug builds only |
+| `app/assets/fonts/` | The bundled Noto Sans fonts |
 | `switcher/` | `now-playing-switcher`, which brings players to the front (in progress) |
 | `spikes/sdl-hello/` | The SDL2 spike that tested gamescope |
 
@@ -101,4 +103,4 @@ needed. Launch it from Gaming Mode like any game.
 GPL-3.0-or-later; see `LICENSE`.
 
 The bundled Noto Sans fonts are under the SIL Open Font License 1.1; see
-`assets/fonts/OFL.txt`.
+`app/assets/fonts/OFL.txt`.
