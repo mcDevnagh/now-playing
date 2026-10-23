@@ -93,6 +93,7 @@ needed. Launch it from Gaming Mode like any game.
 | `src/ui/` | The window, text layout and drawing |
 | `src/art/` | Fetching and decoding covers |
 | `src/debug/` | `--print` and `--fake`, debug builds only |
+| `switcher/` | `now-playing-switcher`, which brings players to the front (in progress) |
 | `spikes/sdl-hello/` | The SDL2 spike that tested gamescope |
 
 ## License

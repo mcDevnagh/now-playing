@@ -1,0 +1,12 @@
+[package]
+name = "now-playing-switcher"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-or-later"
+
+[dependencies]
+clap.workspace = true
+now-playing-core.workspace = true
+serde.workspace = true
+toml = "1.1.8"

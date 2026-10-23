@@ -1,6 +1,6 @@
 [workspace]
-members = ["core"]
-default-members = [".", "core"]
+members = ["core", "switcher"]
+default-members = [".", "core", "switcher"]
 
 [workspace.dependencies]
 clap = { version = "4.6.7", features = ["derive"] }
