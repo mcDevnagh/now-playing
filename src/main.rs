@@ -6,6 +6,7 @@ use now_playing::debug;
 use now_playing::snapcast::{self, Stream};
 use now_playing::state::{State, now_playing};
 use now_playing::ui;
+use now_playing_core::hostname;
 
 const DEFAULT_SERVER: &str = "192.168.1.160:1705";
 
@@ -24,7 +25,7 @@ struct Args {
     #[cfg(debug_assertions)]
     #[arg(long)]
     print: bool,
-    /// Replay a log (see `tests/fixtures/`) instead of connecting.
+    /// Replay a log (see `core/tests/fixtures/`) instead of connecting.
     #[cfg(debug_assertions)]
     #[arg(long, value_name = "LOG", value_parser = read_log)]
     fake: Option<String>,
@@ -80,10 +81,4 @@ fn follow(args: &Args, client: &str, on_stream: impl FnMut(Option<&Stream>)) {
 #[cfg(debug_assertions)]
 fn read_log(path: &str) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|e| e.to_string())
-}
-
-fn hostname() -> Result<String, String> {
-    std::fs::read_to_string("/proc/sys/kernel/hostname")
-        .map(|name| name.trim().to_owned())
-        .map_err(|e| e.to_string())
 }

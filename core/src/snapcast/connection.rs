@@ -1,17 +1,10 @@
 //! The TCP connection to snapserver's JSON-RPC port, kept up forever.
 
 use std::io::{self, BufRead, BufReader, Write};
-use std::net::{TcpStream, ToSocketAddrs};
 use std::thread;
-use std::time::Duration;
-
-use socket2::{SockRef, TcpKeepalive};
 
 use super::{Action, Session, Stream};
-
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
-const MIN_BACKOFF: Duration = Duration::from_secs(1);
-const MAX_BACKOFF: Duration = Duration::from_secs(30);
+use crate::net::{Backoff, connect};
 
 /// Follows `client` on the snapserver at `addr` (`host:port`), calling
 /// `on_stream` whenever its stream may have changed. While disconnected,
@@ -20,11 +13,11 @@ const MAX_BACKOFF: Duration = Duration::from_secs(30);
 /// Blocks in `read()` between messages. TCP keepalive, handled by the kernel,
 /// notices a server that vanished without closing the connection.
 pub fn run(addr: &str, client: &str, mut on_stream: impl FnMut(Option<&Stream>)) -> ! {
-    let mut backoff = MIN_BACKOFF;
+    let mut backoff = Backoff::new();
     loop {
         let mut session = Session::new(client);
         let result = follow(addr, &mut session, &mut |session, action| {
-            backoff = MIN_BACKOFF;
+            backoff.reset();
             if action == Action::Resolved && session.stream().is_none() {
                 eprintln!(
                     "snapcast: client {client} not found or not connected, or its stream is missing"
@@ -36,9 +29,9 @@ pub fn run(addr: &str, client: &str, mut on_stream: impl FnMut(Option<&Stream>))
             eprintln!("snapcast: {addr}: {e}");
         }
         on_stream(None);
-        eprintln!("snapcast: reconnecting in {}s", backoff.as_secs());
-        thread::sleep(backoff);
-        backoff = (backoff * 2).min(MAX_BACKOFF);
+        let delay = backoff.next_delay();
+        eprintln!("snapcast: reconnecting in {}s", delay.as_secs());
+        thread::sleep(delay);
     }
 }
 
@@ -74,22 +67,4 @@ fn follow(
         io::ErrorKind::UnexpectedEof,
         "server closed the connection",
     ))
-}
-
-fn connect(addr: &str) -> io::Result<TcpStream> {
-    let mut last = io::Error::new(io::ErrorKind::NotFound, "no address");
-    for sockaddr in addr.to_socket_addrs()? {
-        match TcpStream::connect_timeout(&sockaddr, CONNECT_TIMEOUT) {
-            Ok(stream) => {
-                let keepalive = TcpKeepalive::new()
-                    .with_time(Duration::from_secs(60))
-                    .with_interval(Duration::from_secs(10))
-                    .with_retries(3);
-                SockRef::from(&stream).set_tcp_keepalive(&keepalive)?;
-                return Ok(stream);
-            }
-            Err(e) => last = e,
-        }
-    }
-    Err(last)
 }

@@ -50,8 +50,8 @@ the background.
 Debug builds add two options that release builds leave out:
 
 - `--print` prints state changes instead of opening the window.
-- `--fake LOG` replays a captured log from `tests/fixtures/` instead of
-  connecting, with its original timing.
+- `--fake LOG` replays a captured log from `core/tests/fixtures/` instead
+  of connecting, with its original timing.
 
 ## Building
 
@@ -60,7 +60,7 @@ Fedora, `sdl2` on Arch, `libsdl2-dev` on Debian).
 
 ```
 cargo build --release
-cargo test
+cargo test --workspace
 ```
 
 The binary links the system libSDL2 and glibc, so build it against the
@@ -85,12 +85,14 @@ needed. Launch it from Gaming Mode like any game.
 
 | Path | What's there |
 |---|---|
-| `src/snapcast/` | JSON-RPC types, the protocol session, the connection |
-| `src/state/` | What to show, from a stream's properties |
+| `core/` | The `now-playing-core` crate, shared by the binaries |
+| `core/src/snapcast/` | JSON-RPC types, the protocol session, the connection |
+| `core/src/state/` | What to show, from a stream's properties |
+| `core/src/net.rs` | TCP keepalive and reconnect backoff |
+| `core/tests/fixtures/` | Captured and hand-written snapserver logs |
 | `src/ui/` | The window, text layout and drawing |
 | `src/art/` | Fetching and decoding covers |
 | `src/debug/` | `--print` and `--fake`, debug builds only |
-| `tests/fixtures/` | Captured and hand-written snapserver logs |
 | `spikes/sdl-hello/` | The SDL2 spike that tested gamescope |
 
 ## License

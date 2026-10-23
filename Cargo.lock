@@ -372,11 +372,18 @@ dependencies = [
  "clap",
  "fontdue",
  "image",
+ "now-playing-core",
  "sdl2",
+ "ureq",
+]
+
+[[package]]
+name = "now-playing-core"
+version = "0.1.0"
+dependencies = [
  "serde",
  "serde_json",
  "socket2",
- "ureq",
 ]
 
 [[package]]

@@ -1,3 +1,14 @@
+[workspace]
+members = ["core"]
+default-members = [".", "core"]
+
+[workspace.dependencies]
+clap = { version = "4.6.7", features = ["derive"] }
+now-playing-core = { path = "core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+socket2 = { version = "0.6", features = ["all"] }
+
 [package]
 name = "now-playing"
 version = "0.1.0"
@@ -6,13 +17,11 @@ publish = false
 license = "GPL-3.0-or-later"
 
 [dependencies]
-clap = { version = "4.6.7", features = ["derive"] }
+clap.workspace = true
 fontdue = "0.9"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
+now-playing-core.workspace = true
 sdl2 = "0.38"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-socket2 = { version = "0.6", features = ["all"] }
 ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
 
 [profile.release]
