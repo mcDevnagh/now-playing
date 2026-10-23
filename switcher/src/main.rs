@@ -2,22 +2,19 @@
 //! start playing.
 
 mod action;
+mod app;
 mod config;
 mod gamescope;
 mod listener;
-mod registry;
-mod rules;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::mpsc;
+use std::thread;
 
 use clap::Parser;
-use now_playing_core::hostname;
 
 use config::Config;
-use gamescope::Gamescope;
-use registry::{Listener, Registry};
 
 /// Brings Now Playing or Kodi to the front when they start playing.
 #[derive(Parser)]
@@ -37,51 +34,26 @@ fn main() -> ExitCode {
         eprintln!("switcher: no --config given, and neither $XDG_CONFIG_HOME nor $HOME is set");
         return ExitCode::FAILURE;
     };
-    let config = match Config::load(&path) {
-        Ok(config) => config,
+    let listeners = match Config::load(&path).and_then(|config| listener::from_config(&config)) {
+        Ok(listeners) => listeners,
         Err(e) => {
             eprintln!("switcher: {e}");
             return ExitCode::FAILURE;
         }
     };
-    let registry = Registry::new(&config);
     if !args.dry_run {
         eprintln!("switcher: actions aren't implemented yet; running as --dry-run");
     }
 
-    let (triggers, received) = mpsc::channel();
-    for listener in &registry.listeners {
-        match listener {
-            Listener::Snapcast { server, client } => {
-                let client = match client.clone().map_or_else(hostname, Ok) {
-                    Ok(client) => client,
-                    Err(e) => {
-                        eprintln!("switcher: no snapcast.client given and no hostname: {e}");
-                        return ExitCode::FAILURE;
-                    }
-                };
-                listener::snapcast::spawn(server.clone(), client, triggers.clone());
-            }
-            Listener::Kodi { address } => {
-                listener::kodi::spawn(address.clone(), triggers.clone());
-            }
-        }
+    let (show, requests) = mpsc::channel();
+    for mut listener in listeners {
+        let show = show.clone();
+        thread::spawn(move || listener.run(show));
     }
 
     let display = gamescope::display();
-    for trigger in received {
-        let focused = Gamescope::connect(&display).and_then(|gamescope| gamescope.focused_app());
-        let front = match rules::front_app(focused) {
-            Ok(front) => front,
-            Err(skip) => {
-                eprintln!("switcher: {trigger}: skipped ({skip})");
-                continue;
-            }
-        };
-        eprintln!("switcher: {trigger}");
-        for &action in registry.actions(trigger) {
-            action::run(action, front);
-        }
+    for app in requests {
+        action::show(app, &display);
     }
-    unreachable!("the channel's sender is kept alive by `triggers`")
+    unreachable!("the channel's sender is kept alive by `show`")
 }

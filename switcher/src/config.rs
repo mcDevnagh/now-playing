@@ -1,9 +1,11 @@
-//! The TOML config: which apps to bring to the front, and on what.
+//! The TOML config: which listeners to start, and the app each one shows.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+
+use crate::app::App;
 
 const DEFAULT_KODI_ADDRESS: &str = "127.0.0.1:9090";
 
@@ -14,34 +16,71 @@ pub struct Config {
     pub snapcast: Option<Snapcast>,
 }
 
-/// Kodi playback → bring Kodi to the front.
+/// Kodi playback → show Kodi.
 #[derive(Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "RawKodi")]
 pub struct Kodi {
-    /// Kodi's gamescope ID.
-    pub app: u32,
+    pub app: App,
     /// Kodi's JSON-RPC TCP address.
-    #[serde(default = "default_kodi_address")]
     pub address: String,
 }
 
-/// Our Snapcast client starting to play → bring an app to the front, or
-/// launch it.
+/// Our Snapcast client starting to play → show an app.
 #[derive(Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "RawSnapcast")]
 pub struct Snapcast {
-    /// The gamescope ID to bring to the front.
-    pub app: Option<u32>,
-    /// The Steam launch ID to start if it isn't running.
-    pub launch: Option<u64>,
+    pub app: App,
     /// snapserver's JSON-RPC address.
     pub server: String,
     /// The client to follow [default: this machine's hostname].
     pub client: Option<String>,
 }
 
-fn default_kodi_address() -> String {
-    DEFAULT_KODI_ADDRESS.to_owned()
+/// A `[kodi]` table as written, checked on the way to [`Kodi`].
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawKodi {
+    app: Option<u32>,
+    launch: Option<u64>,
+    address: Option<String>,
+}
+
+/// A `[snapcast]` table as written, checked on the way to [`Snapcast`].
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawSnapcast {
+    app: Option<u32>,
+    launch: Option<u64>,
+    server: String,
+    client: Option<String>,
+}
+
+impl TryFrom<RawKodi> for Kodi {
+    type Error = String;
+
+    fn try_from(raw: RawKodi) -> Result<Self, String> {
+        Ok(Self {
+            app: App::new(raw.app, raw.launch).map_err(|e| format!("[kodi] {e}"))?,
+            address: raw
+                .address
+                .unwrap_or_else(|| DEFAULT_KODI_ADDRESS.to_owned()),
+        })
+    }
+}
+
+impl TryFrom<RawSnapcast> for Snapcast {
+    type Error = String;
+
+    fn try_from(raw: RawSnapcast) -> Result<Self, String> {
+        if raw.server.is_empty() {
+            return Err("[snapcast] `server` is empty".to_owned());
+        }
+        Ok(Self {
+            app: App::new(raw.app, raw.launch).map_err(|e| format!("[snapcast] {e}"))?,
+            server: raw.server,
+            client: raw.client,
+        })
+    }
 }
 
 impl Config {
@@ -56,14 +95,6 @@ impl Config {
         let config: Self = toml::from_str(text).map_err(|e| e.to_string())?;
         if config.kodi.is_none() && config.snapcast.is_none() {
             return Err("needs a [kodi] or [snapcast] table".to_owned());
-        }
-        if let Some(snapcast) = &config.snapcast {
-            if snapcast.app.is_none() && snapcast.launch.is_none() {
-                return Err("[snapcast] needs `app`, `launch` or both".to_owned());
-            }
-            if snapcast.server.is_empty() {
-                return Err("[snapcast] `server` is empty".to_owned());
-            }
         }
         Ok(config)
     }

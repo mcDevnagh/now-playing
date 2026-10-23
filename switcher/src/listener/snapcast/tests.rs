@@ -2,9 +2,9 @@ use now_playing_core::snapcast::Session;
 
 use super::*;
 
-const BUILTIN_LOG: &str = include_str!("../../../core/tests/fixtures/builtin-events.log");
-const META_LOG: &str = include_str!("../../../core/tests/fixtures/meta-librespot-events.log");
-const GROUP_SWITCH_LOG: &str = include_str!("../../../core/tests/fixtures/group-switch.log");
+const BUILTIN_LOG: &str = include_str!("../../../../core/tests/fixtures/builtin-events.log");
+const META_LOG: &str = include_str!("../../../../core/tests/fixtures/meta-librespot-events.log");
+const GROUP_SWITCH_LOG: &str = include_str!("../../../../core/tests/fixtures/group-switch.log");
 
 fn edges(values: &[Option<bool>]) -> Vec<bool> {
     let mut edges = SnapcastEdges::default();
@@ -77,20 +77,4 @@ fn builtin_log_starts_once() {
 #[test]
 fn group_switch_log_doesnt_start_on_reconnect() {
     assert_eq!(starts(GROUP_SWITCH_LOG), 0);
-}
-
-#[test]
-fn front_app_is_the_focused_app() {
-    assert_eq!(front_app(Ok(Some(7))), Ok(7));
-}
-
-#[test]
-fn desktop_mode_skips() {
-    assert_eq!(front_app(Ok(None)), Err(Skip::NotGamingMode));
-}
-
-#[test]
-fn unreadable_display_skips() {
-    let skip = front_app(Err(":0: refused".to_owned())).unwrap_err();
-    assert_eq!(skip.to_string(), "can't read the display: :0: refused");
 }

@@ -6,7 +6,7 @@ const FULL: &str = r#"
     address = "kodi:9090"
 
     [snapcast]
-    app = 2
+    app = 2457742405
     launch = 10555923251500941312
     server = "snapserver:1705"
     client = "TV"
@@ -19,15 +19,35 @@ fn full() {
         config,
         Config {
             kodi: Some(Kodi {
-                app: 1,
+                app: App {
+                    gamescope: 1,
+                    launch: None,
+                },
                 address: "kodi:9090".to_owned(),
             }),
             snapcast: Some(Snapcast {
-                app: Some(2),
-                launch: Some(10555923251500941312),
+                app: App {
+                    gamescope: 2457742405,
+                    launch: Some(10555923251500941312),
+                },
                 server: "snapserver:1705".to_owned(),
                 client: Some("TV".to_owned()),
             }),
+        }
+    );
+}
+
+#[test]
+fn kodi_can_have_a_launch_id() {
+    let kodi = Config::parse("[kodi]\nlaunch = 10375237194288726016")
+        .unwrap()
+        .kodi
+        .unwrap();
+    assert_eq!(
+        kodi.app,
+        App {
+            gamescope: 2415673154,
+            launch: Some(10375237194288726016),
         }
     );
 }
@@ -41,11 +61,10 @@ fn minimal_kodi_takes_the_default_address() {
 
 #[test]
 fn minimal_snapcast() {
-    for text in [
-        "[snapcast]\napp = 2\nserver = \"s:1705\"",
-        "[snapcast]\nlaunch = 3\nserver = \"s:1705\"",
-    ] {
-        let snapcast = Config::parse(text).unwrap().snapcast.unwrap();
+    for (ids, gamescope) in [("app = 2", 2), ("launch = 8589934592", 2)] {
+        let text = format!("[snapcast]\n{ids}\nserver = \"s:1705\"");
+        let snapcast = Config::parse(&text).unwrap().snapcast.unwrap();
+        assert_eq!(snapcast.app.gamescope, gamescope);
         assert_eq!(snapcast.client, None);
     }
 }
@@ -55,9 +74,16 @@ fn minimal_snapcast() {
 fn errors() {
     let cases = [
         ("", "[kodi] or [snapcast]"),
-        ("[kodi]", "app"),
+        ("[kodi]", "[kodi] needs `app`, `launch`"),
+        (
+            "[kodi]\napp = 1\nlaunch = 10375237194288726016",
+            "doesn't match",
+        ),
         ("[kodi]\napp = -1", "app"),
-        ("[snapcast]\nserver = \"s:1705\"", "`app`, `launch`"),
+        (
+            "[snapcast]\nserver = \"s:1705\"",
+            "[snapcast] needs `app`, `launch`",
+        ),
         ("[snapcast]\napp = 2", "server"),
         ("[snapcast]\napp = 2\nserver = \"\"", "server"),
         ("[snapcast]\napp = 4294967296\nserver = \"s:1705\"", "app"),
