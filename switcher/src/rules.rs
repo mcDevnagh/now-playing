@@ -1,4 +1,6 @@
-//! Pure decisions: when music counts as having started.
+//! Pure decisions: when music counts as having started, and whether to act.
+
+use std::fmt;
 
 use now_playing_core::snapcast::Stream;
 use now_playing_core::state::{State, now_playing};
@@ -25,6 +27,34 @@ impl MusicEdges {
         let started = self.last == Some(false) && playing == Some(true);
         self.last = playing;
         started
+    }
+}
+
+/// Why a trigger's actions were skipped.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Skip {
+    /// The display has no `GAMESCOPE_FOCUSED_APP`, so it isn't gamescope.
+    NotGamingMode,
+    /// The display couldn't be read.
+    Display(String),
+}
+
+impl fmt::Display for Skip {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Skip::NotGamingMode => f.write_str("not in Gaming Mode"),
+            Skip::Display(e) => write!(f, "can't read the display: {e}"),
+        }
+    }
+}
+
+/// The app in front, from reading `GAMESCOPE_FOCUSED_APP`, or why to skip
+/// the actions.
+pub fn front_app(focused: Result<Option<u32>, String>) -> Result<u32, Skip> {
+    match focused {
+        Ok(Some(app)) => Ok(app),
+        Ok(None) => Err(Skip::NotGamingMode),
+        Err(e) => Err(Skip::Display(e)),
     }
 }
 
@@ -109,5 +139,21 @@ mod tests {
     #[test]
     fn group_switch_log_doesnt_start_on_reconnect() {
         assert_eq!(starts(GROUP_SWITCH_LOG), 0);
+    }
+
+    #[test]
+    fn front_app_is_the_focused_app() {
+        assert_eq!(front_app(Ok(Some(7))), Ok(7));
+    }
+
+    #[test]
+    fn desktop_mode_skips() {
+        assert_eq!(front_app(Ok(None)), Err(Skip::NotGamingMode));
+    }
+
+    #[test]
+    fn unreadable_display_skips() {
+        let skip = front_app(Err(":0: refused".to_owned())).unwrap_err();
+        assert_eq!(skip.to_string(), "can't read the display: :0: refused");
     }
 }

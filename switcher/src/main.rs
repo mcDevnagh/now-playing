@@ -3,6 +3,7 @@
 
 mod action;
 mod config;
+mod gamescope;
 mod listener;
 mod registry;
 mod rules;
@@ -15,6 +16,7 @@ use clap::Parser;
 use now_playing_core::hostname;
 
 use config::Config;
+use gamescope::Gamescope;
 use listener::Event;
 use registry::{Listener, Registry, Trigger};
 use rules::MusicEdges;
@@ -68,6 +70,7 @@ fn main() -> ExitCode {
         }
     }
 
+    let display = gamescope::display();
     let mut music = MusicEdges::default();
     for event in received {
         let trigger = match event {
@@ -75,9 +78,17 @@ fn main() -> ExitCode {
             Event::Music(_) => continue,
             Event::KodiStarted => Trigger::KodiStarted,
         };
+        let focused = Gamescope::connect(&display).and_then(|gamescope| gamescope.focused_app());
+        let front = match rules::front_app(focused) {
+            Ok(front) => front,
+            Err(skip) => {
+                eprintln!("switcher: {trigger}: skipped ({skip})");
+                continue;
+            }
+        };
         eprintln!("switcher: {trigger}");
         for &action in registry.actions(trigger) {
-            action::run(action);
+            action::run(action, front);
         }
     }
     unreachable!("the channel's sender is kept alive by `events`")

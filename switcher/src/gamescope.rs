@@ -1,0 +1,106 @@
+//! gamescope's X11 interface: properties on its Xwayland root window.
+
+use std::fmt::Display;
+
+use x11rb::connection::Connection;
+use x11rb::protocol::xproto::{Atom, AtomEnum, ConnectionExt as _, GetPropertyReply, Window};
+use x11rb::rust_connection::RustConnection;
+
+const DEFAULT_DISPLAY: &str = ":0";
+
+/// The X display gamescope's properties are on: `$DISPLAY`, else `:0`.
+pub fn display() -> String {
+    std::env::var("DISPLAY")
+        .ok()
+        .filter(|display| !display.is_empty())
+        .unwrap_or_else(|| DEFAULT_DISPLAY.to_owned())
+}
+
+/// A connection to the display. Open a new one for each trigger, so a
+/// gamescope restart needs no handling.
+pub struct Gamescope {
+    conn: RustConnection,
+    root: Window,
+}
+
+impl Gamescope {
+    pub fn connect(display: &str) -> Result<Self, String> {
+        let (conn, screen) = RustConnection::connect(Some(display)).map_err(err(display))?;
+        let root = conn.setup().roots[screen].root;
+        Ok(Self { conn, root })
+    }
+
+    /// The gamescope ID of the app in front: `GAMESCOPE_FOCUSED_APP`. `None`
+    /// without the property, as in Desktop Mode.
+    pub fn focused_app(&self) -> Result<Option<u32>, String> {
+        let Some(atom) = self.atom("GAMESCOPE_FOCUSED_APP")? else {
+            return Ok(None);
+        };
+        let reply = self
+            .conn
+            .get_property(false, self.root, atom, AtomEnum::CARDINAL, 0, 1)
+            .map_err(err("GAMESCOPE_FOCUSED_APP"))?
+            .reply()
+            .map_err(err("GAMESCOPE_FOCUSED_APP"))?;
+        Ok(cardinal(&reply))
+    }
+
+    /// The atom called `name`; `None` if no client has created it, in which
+    /// case no window has a property by that name.
+    fn atom(&self, name: &str) -> Result<Option<Atom>, String> {
+        let atom = self
+            .conn
+            .intern_atom(true, name.as_bytes())
+            .map_err(err(name))?
+            .reply()
+            .map_err(err(name))?
+            .atom;
+        Ok((atom != u32::from(AtomEnum::NONE)).then_some(atom))
+    }
+}
+
+/// The first value of a 32-bit CARDINAL property; `None` if it's missing.
+fn cardinal(reply: &GetPropertyReply) -> Option<u32> {
+    reply.value32()?.next()
+}
+
+/// Prefixes an X error with what it was about.
+fn err<E: Display>(what: &str) -> impl Fn(E) -> String {
+    move |e| format!("{what}: {e}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reply(type_: AtomEnum, format: u8, value: &[u8]) -> GetPropertyReply {
+        GetPropertyReply {
+            format,
+            sequence: 0,
+            length: 0,
+            type_: type_.into(),
+            bytes_after: 0,
+            value_len: value.len() as u32 / (u32::from(format) / 8).max(1),
+            value: value.to_vec(),
+        }
+    }
+
+    #[test]
+    fn cardinal_reads_the_first_value() {
+        let value = 2457742405_u32.to_ne_bytes();
+        assert_eq!(
+            cardinal(&reply(AtomEnum::CARDINAL, 32, &value)),
+            Some(2457742405)
+        );
+    }
+
+    #[test]
+    fn missing_property_is_none() {
+        assert_eq!(cardinal(&reply(AtomEnum::NONE, 0, &[])), None);
+    }
+
+    #[test]
+    fn wrong_format_is_none() {
+        assert_eq!(cardinal(&reply(AtomEnum::STRING, 8, b"HTPC")), None);
+    }
+}
