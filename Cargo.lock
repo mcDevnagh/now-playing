@@ -409,6 +409,7 @@ dependencies = [
  "clap",
  "now-playing-core",
  "serde",
+ "serde_json",
  "toml",
 ]
 

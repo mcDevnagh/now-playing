@@ -10,10 +10,6 @@ pub enum Trigger {
     /// Music started on our Snapcast client.
     MusicStarted,
     /// Kodi started or resumed playback.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "sent by the Kodi listener, still to come")
-    )]
     KodiStarted,
 }
 

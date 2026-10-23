@@ -63,7 +63,7 @@ fn main() -> ExitCode {
                 listener::snapcast::spawn(server.clone(), client, events.clone());
             }
             Listener::Kodi { address } => {
-                eprintln!("switcher: Kodi ({address}) isn't supported yet; ignoring [kodi]");
+                listener::kodi::spawn(address.clone(), events.clone());
             }
         }
     }
@@ -73,6 +73,7 @@ fn main() -> ExitCode {
         let trigger = match event {
             Event::Music(playing) if music.update(playing) => Trigger::MusicStarted,
             Event::Music(_) => continue,
+            Event::KodiStarted => Trigger::KodiStarted,
         };
         eprintln!("switcher: {trigger}");
         for &action in registry.actions(trigger) {
