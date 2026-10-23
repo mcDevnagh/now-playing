@@ -88,7 +88,7 @@ needed. Launch it from Gaming Mode like any game.
 | `core/` | The `now-playing-core` crate, shared by the binaries |
 | `core/src/snapcast/` | JSON-RPC types, the protocol session, the connection |
 | `core/src/state/` | What to show, from a stream's properties |
-| `core/src/net.rs` | TCP keepalive and reconnect backoff |
+| `core/src/net/` | TCP keepalive and reconnect backoff |
 | `core/tests/fixtures/` | Captured and hand-written snapserver logs |
 | `app/` | The `now-playing` crate: the full-screen app |
 | `app/src/ui/` | The window, text layout and drawing |
