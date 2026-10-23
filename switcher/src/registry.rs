@@ -7,8 +7,8 @@ use crate::config::Config;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Trigger {
-    /// Music started on our Snapcast client.
-    MusicStarted,
+    /// Our Snapcast client started playing.
+    SnapcastStarted,
     /// Kodi started or resumed playback.
     KodiStarted,
 }
@@ -16,7 +16,7 @@ pub enum Trigger {
 impl fmt::Display for Trigger {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(match self {
-            Trigger::MusicStarted => "music started",
+            Trigger::SnapcastStarted => "Snapcast started",
             Trigger::KodiStarted => "Kodi started",
         })
     }
@@ -44,7 +44,7 @@ pub enum Listener {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Registry {
     pub listeners: Vec<Listener>,
-    music: Vec<Action>,
+    snapcast: Vec<Action>,
     kodi: Vec<Action>,
 }
 
@@ -52,7 +52,7 @@ impl Registry {
     pub fn new(config: &Config) -> Self {
         let mut registry = Self {
             listeners: Vec::new(),
-            music: Vec::new(),
+            snapcast: Vec::new(),
             kodi: Vec::new(),
         };
         if let Some(snapcast) = &config.snapcast {
@@ -61,8 +61,10 @@ impl Registry {
                 client: snapcast.client.clone(),
             });
             // Focus first: launching is only for when it isn't running.
-            registry.music.extend(snapcast.app.map(Action::Focus));
-            registry.music.extend(snapcast.launch.map(Action::Launch));
+            registry.snapcast.extend(snapcast.app.map(Action::Focus));
+            registry
+                .snapcast
+                .extend(snapcast.launch.map(Action::Launch));
         }
         if let Some(kodi) = &config.kodi {
             registry.listeners.push(Listener::Kodi {
@@ -76,7 +78,7 @@ impl Registry {
     /// The actions for `trigger`, in the order to run them.
     pub fn actions(&self, trigger: Trigger) -> &[Action] {
         match trigger {
-            Trigger::MusicStarted => &self.music,
+            Trigger::SnapcastStarted => &self.snapcast,
             Trigger::KodiStarted => &self.kodi,
         }
     }

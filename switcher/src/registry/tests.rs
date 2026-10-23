@@ -38,7 +38,7 @@ fn everything() {
     });
     assert_eq!(registry.listeners, [snapcast_listener(), kodi_listener()]);
     assert_eq!(
-        registry.actions(Trigger::MusicStarted),
+        registry.actions(Trigger::SnapcastStarted),
         [Action::Focus(2), Action::Launch(3)]
     );
     assert_eq!(registry.actions(Trigger::KodiStarted), [Action::Focus(1)]);
@@ -51,7 +51,7 @@ fn kodi_only() {
         snapcast: None,
     });
     assert_eq!(registry.listeners, [kodi_listener()]);
-    assert_eq!(registry.actions(Trigger::MusicStarted), []);
+    assert_eq!(registry.actions(Trigger::SnapcastStarted), []);
     assert_eq!(registry.actions(Trigger::KodiStarted), [Action::Focus(1)]);
 }
 
@@ -67,7 +67,7 @@ fn snapcast_only() {
             snapcast: Some(snapcast(app, launch)),
         });
         assert_eq!(registry.listeners, [snapcast_listener()]);
-        assert_eq!(registry.actions(Trigger::MusicStarted), actions);
+        assert_eq!(registry.actions(Trigger::SnapcastStarted), actions);
         assert_eq!(registry.actions(Trigger::KodiStarted), []);
     }
 }

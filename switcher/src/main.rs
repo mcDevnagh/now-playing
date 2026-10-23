@@ -17,9 +17,7 @@ use now_playing_core::hostname;
 
 use config::Config;
 use gamescope::Gamescope;
-use listener::Event;
-use registry::{Listener, Registry, Trigger};
-use rules::MusicEdges;
+use registry::{Listener, Registry};
 
 /// Brings Now Playing or Kodi to the front when they start playing.
 #[derive(Parser)]
@@ -51,7 +49,7 @@ fn main() -> ExitCode {
         eprintln!("switcher: actions aren't implemented yet; running as --dry-run");
     }
 
-    let (events, received) = mpsc::channel();
+    let (triggers, received) = mpsc::channel();
     for listener in &registry.listeners {
         match listener {
             Listener::Snapcast { server, client } => {
@@ -62,22 +60,16 @@ fn main() -> ExitCode {
                         return ExitCode::FAILURE;
                     }
                 };
-                listener::snapcast::spawn(server.clone(), client, events.clone());
+                listener::snapcast::spawn(server.clone(), client, triggers.clone());
             }
             Listener::Kodi { address } => {
-                listener::kodi::spawn(address.clone(), events.clone());
+                listener::kodi::spawn(address.clone(), triggers.clone());
             }
         }
     }
 
     let display = gamescope::display();
-    let mut music = MusicEdges::default();
-    for event in received {
-        let trigger = match event {
-            Event::Music(playing) if music.update(playing) => Trigger::MusicStarted,
-            Event::Music(_) => continue,
-            Event::KodiStarted => Trigger::KodiStarted,
-        };
+    for trigger in received {
         let focused = Gamescope::connect(&display).and_then(|gamescope| gamescope.focused_app());
         let front = match rules::front_app(focused) {
             Ok(front) => front,
@@ -91,5 +83,5 @@ fn main() -> ExitCode {
             action::run(action, front);
         }
     }
-    unreachable!("the channel's sender is kept alive by `events`")
+    unreachable!("the channel's sender is kept alive by `triggers`")
 }

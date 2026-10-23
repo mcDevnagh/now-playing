@@ -1,4 +1,5 @@
-//! Pure decisions: when music counts as having started, and whether to act.
+//! Pure decisions: when Snapcast counts as having started, and whether to
+//! act.
 
 use std::fmt;
 
@@ -11,14 +12,15 @@ pub fn playing(stream: Option<&Stream>) -> Option<bool> {
     stream.map(|stream| matches!(now_playing(stream), State::Playing(_)))
 }
 
-/// Finds music starting in a series of [`playing`] values.
+/// Finds our Snapcast client starting to play in a series of [`playing`]
+/// values.
 #[derive(Debug, Default)]
-pub struct MusicEdges {
+pub struct SnapcastEdges {
     last: Option<bool>,
 }
 
-impl MusicEdges {
-    /// Takes the next value; true if music just started.
+impl SnapcastEdges {
+    /// Takes the next value; true if playback just started.
     ///
     /// Only not playing → playing counts. The first value after `None` is a
     /// baseline, so a reconnect, a snapclient restart or starting mid-song

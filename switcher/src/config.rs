@@ -25,7 +25,7 @@ pub struct Kodi {
     pub address: String,
 }
 
-/// Music starting on our Snapcast client → bring an app to the front, or
+/// Our Snapcast client starting to play → bring an app to the front, or
 /// launch it.
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]

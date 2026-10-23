@@ -7,7 +7,7 @@ const META_LOG: &str = include_str!("../../../core/tests/fixtures/meta-librespot
 const GROUP_SWITCH_LOG: &str = include_str!("../../../core/tests/fixtures/group-switch.log");
 
 fn edges(values: &[Option<bool>]) -> Vec<bool> {
-    let mut edges = MusicEdges::default();
+    let mut edges = SnapcastEdges::default();
     values.iter().map(|&value| edges.update(value)).collect()
 }
 

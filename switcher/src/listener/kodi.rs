@@ -7,14 +7,14 @@ use std::thread;
 use now_playing_core::net::{Backoff, connect};
 use serde_json::Value;
 
-use super::Event;
+use crate::registry::Trigger;
 
 /// Starts a thread that connects to Kodi's JSON-RPC TCP port at `address`,
-/// sending [`Event::KodiStarted`] on each play or resume. Reconnects forever.
+/// sending [`Trigger::KodiStarted`] on each play or resume. Reconnects forever.
 ///
 /// Kodi often isn't running, so a refused connection is normal: only the
 /// first failure of each outage is logged.
-pub fn spawn(address: String, events: Sender<Event>) {
+pub fn spawn(address: String, triggers: Sender<Trigger>) {
     thread::spawn(move || {
         let mut backoff = Backoff::new();
         let mut quiet = false;
@@ -25,7 +25,7 @@ pub fn spawn(address: String, events: Sender<Event>) {
                     backoff.reset();
                     let result = follow(stream, || {
                         // The dispatch loop outlives the listeners.
-                        let _ = events.send(Event::KodiStarted);
+                        let _ = triggers.send(Trigger::KodiStarted);
                     });
                     let reason = result.err().map_or("closed".to_owned(), |e| e.to_string());
                     eprintln!("kodi: {address}: disconnected ({reason}); retrying quietly");
