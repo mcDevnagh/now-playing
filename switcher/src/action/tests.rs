@@ -63,3 +63,19 @@ fn failed_running_check_is_an_error() {
     let result = decide(APP, Some(OTHER), || Err("gone".to_owned()));
     assert_eq!(result, Err("gone".to_owned()));
 }
+
+#[test]
+fn focus_outcomes() {
+    let cases = [
+        (Ok(Some(APP.gamescope)), "switched"),
+        (Ok(Some(OTHER)), "didn't switch (app 8 is still in front)"),
+        (Ok(None), "didn't switch (no longer in Gaming Mode)"),
+        (
+            Err("display :0: gone".to_owned()),
+            "focused it, but can't check it switched (display :0: gone)",
+        ),
+    ];
+    for (front, outcome) in cases {
+        assert_eq!(focus_outcome(APP.gamescope, front), outcome);
+    }
+}

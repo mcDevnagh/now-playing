@@ -43,7 +43,7 @@ fn main() -> ExitCode {
         }
     };
     if !args.dry_run {
-        eprintln!("switcher: actions aren't implemented yet; running as --dry-run");
+        eprintln!("switcher: launching isn't implemented yet; launches are dry runs");
     }
 
     let (show, requests) = mpsc::channel();
@@ -54,7 +54,7 @@ fn main() -> ExitCode {
 
     let display = gamescope::display();
     for app in requests {
-        action::show(app, &display);
+        action::show(app, &display, args.dry_run);
     }
     unreachable!("the channel's sender is kept alive by `show`")
 }
