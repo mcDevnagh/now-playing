@@ -11,4 +11,5 @@ now-playing-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml = "1.1.8"
+tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
 x11rb = "0.14.0"

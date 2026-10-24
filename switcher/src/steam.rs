@@ -5,6 +5,8 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
+pub mod ui;
+
 /// Whether Steam is running `app`. Steam starts each app under its `reaper`
 /// process, as `reaper SteamLaunch AppId=<gamescope ID> -- <command>`, so
 /// this looks for that in `/proc`. Apps' windows don't say which app they

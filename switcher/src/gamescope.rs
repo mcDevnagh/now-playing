@@ -3,11 +3,8 @@
 use std::fmt::Display;
 
 use x11rb::connection::Connection;
-use x11rb::protocol::xproto::{
-    Atom, AtomEnum, ConnectionExt as _, GetPropertyReply, PropMode, Window,
-};
+use x11rb::protocol::xproto::{Atom, AtomEnum, ConnectionExt as _, GetPropertyReply, Window};
 use x11rb::rust_connection::RustConnection;
-use x11rb::wrapper::ConnectionExt as _;
 
 const DEFAULT_DISPLAY: &str = ":0";
 
@@ -47,32 +44,6 @@ impl Gamescope {
             .reply()
             .map_err(err("GAMESCOPE_FOCUSED_APP"))?;
         Ok(cardinal(&reply))
-    }
-
-    /// Asks gamescope to bring `app` to the front, by writing its ID alone
-    /// to `GAMESCOPECTRL_BASELAYER_APPID`. gamescope acts on it a moment
-    /// later, and ignores it if `app` isn't running. Never write more IDs
-    /// after it: if `app` isn't running, gamescope then shows nothing.
-    pub fn focus(&self, app: u32) -> Result<(), String> {
-        const NAME: &str = "GAMESCOPECTRL_BASELAYER_APPID";
-        let atom = self
-            .conn
-            .intern_atom(false, NAME.as_bytes())
-            .map_err(err(NAME))?
-            .reply()
-            .map_err(err(NAME))?
-            .atom;
-        self.conn
-            .change_property32(
-                PropMode::REPLACE,
-                self.root,
-                atom,
-                AtomEnum::CARDINAL,
-                &[app],
-            )
-            .map_err(err(NAME))?
-            .check()
-            .map_err(err(NAME))
     }
 
     /// The atom called `name`; `None` if no client has created it, in which

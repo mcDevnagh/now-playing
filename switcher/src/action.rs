@@ -22,7 +22,8 @@ enum Decision {
     CantLaunch,
 }
 
-/// How long gamescope takes to act on a focus request, before checking it.
+/// How long Steam and gamescope take to act on a focus request, before
+/// checking it.
 const SETTLE: Duration = Duration::from_millis(200);
 
 /// Brings `app` to the front on `display`, logging what it did. With
@@ -50,10 +51,10 @@ pub fn show(app: App, display: &str, dry_run: bool) {
     }
 }
 
-/// Focuses `app`, then checks it came to the front. Returns the outcome, to
-/// log.
+/// Focuses `app` through Steam, then checks it came to the front. Returns
+/// the outcome, to log.
 fn focus(gamescope: &Gamescope, app: u32) -> String {
-    if let Err(e) = gamescope.focus(app) {
+    if let Err(e) = steam::ui::focus(app) {
         return format!("couldn't focus it ({e})");
     }
     thread::sleep(SETTLE);
