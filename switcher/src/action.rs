@@ -2,6 +2,7 @@
 
 use crate::app::App;
 use crate::gamescope::Gamescope;
+use crate::steam;
 
 /// What to do for an app that asked to be shown.
 #[derive(Debug, PartialEq, Eq)]
@@ -23,7 +24,7 @@ enum Decision {
 pub fn show(app: App, display: &str) {
     let decision = Gamescope::connect(display).and_then(|gamescope| {
         decide(app, gamescope.focused_app()?, || {
-            gamescope.is_running(app.gamescope)
+            steam::is_running(app.gamescope).map_err(|e| format!("/proc: {e}"))
         })
     });
     match decision {
@@ -34,7 +35,7 @@ pub fn show(app: App, display: &str) {
         Ok(Decision::CantLaunch) => {
             eprintln!("switcher: {app}: not running, and no launch ID to start it")
         }
-        Err(e) => eprintln!("switcher: {app}: skipped (can't read the display: {e})"),
+        Err(e) => eprintln!("switcher: {app}: skipped ({e})"),
     }
 }
 

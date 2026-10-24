@@ -6,6 +6,7 @@ mod app;
 mod config;
 mod gamescope;
 mod listener;
+mod steam;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
