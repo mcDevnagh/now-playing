@@ -27,7 +27,7 @@ enum Decision {
 const SETTLE: Duration = Duration::from_millis(200);
 
 /// Brings `app` to the front on `display`, logging what it did. With
-/// `dry_run`, it only logs what it would do. Launching is a dry run so far.
+/// `dry_run`, it only logs what it would do.
 pub fn show(app: App, display: &str, dry_run: bool) {
     let gamescope = match Gamescope::connect(display) {
         Ok(gamescope) => gamescope,
@@ -43,7 +43,13 @@ pub fn show(app: App, display: &str, dry_run: bool) {
         Ok(Decision::AlreadyInFront) => eprintln!("switcher: {app}: already in front"),
         Ok(Decision::Focus) if dry_run => eprintln!("switcher: {app}: dry run: would focus it"),
         Ok(Decision::Focus) => eprintln!("switcher: {app}: {}", focus(&gamescope, app.gamescope)),
-        Ok(Decision::Launch(id)) => eprintln!("switcher: {app}: dry run: would launch {id}"),
+        Ok(Decision::Launch(id)) if dry_run => {
+            eprintln!("switcher: {app}: dry run: would launch {id}")
+        }
+        Ok(Decision::Launch(id)) => match steam::ui::launch(id) {
+            Ok(()) => eprintln!("switcher: {app}: launching {id}"),
+            Err(e) => eprintln!("switcher: {app}: couldn't launch {id} ({e})"),
+        },
         Ok(Decision::CantLaunch) => {
             eprintln!("switcher: {app}: not running, and no launch ID to start it")
         }

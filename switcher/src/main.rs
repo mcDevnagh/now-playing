@@ -42,9 +42,6 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    if !args.dry_run {
-        eprintln!("switcher: launching isn't implemented yet; launches are dry runs");
-    }
 
     let (show, requests) = mpsc::channel();
     for mut listener in listeners {

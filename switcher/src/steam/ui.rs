@@ -26,6 +26,19 @@ pub fn focus(app: u32) -> Result<(), String> {
         .map_err(|e| format!("Steam's UI at {DEBUGGER}: {e}"))
 }
 
+/// Launches the app with `launch_id`, as `steam steam://rungameid/<id>`
+/// would, but through the running Steam: a `steam` process started by a
+/// service might not find it. Steam brings the app to the front once it's
+/// up. Launching an app that's already running makes Steam show an error.
+pub fn launch(launch_id: u64) -> Result<(), String> {
+    let url = format!("steam://rungameid/{launch_id}");
+    evaluate(
+        DEBUGGER,
+        &format!("SteamClient.URL.ExecuteSteamURL({url:?})"),
+    )
+    .map_err(|e| format!("Steam's UI at {DEBUGGER}: {e}"))
+}
+
 /// Evaluates `expression` in Steam's UI, failing if it throws.
 fn evaluate(address: &str, expression: &str) -> Result<(), String> {
     let path = page_path(&get(address, "/json")?)?;
