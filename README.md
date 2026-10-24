@@ -8,6 +8,9 @@ playing, the screen is black.
 It's built for a TV on a Linux HTPC, launched from Steam's Gaming Mode
 (gamescope), but runs on any Linux desktop with SDL2.
 
+A companion service, [`now-playing-switcher`](#the-switcher), brings it to
+the front when music starts, and Kodi to the front when Kodi plays.
+
 [Snapcast]: https://github.com/badaix/snapcast
 
 ## How it works
@@ -63,6 +66,10 @@ cargo build --release
 cargo test
 ```
 
+This builds both binaries, `target/release/now-playing` and
+`target/release/now-playing-switcher`. The switcher needs no system
+libraries.
+
 The binary links the system libSDL2 and glibc, so build it against the
 same versions as the machine it runs on. For a Fedora-based target such
 as Bazzite, the `Containerfile` gives a matching build environment:
@@ -73,13 +80,81 @@ podman run --rm -v "$PWD":/src:Z -e CARGO_TARGET_DIR=/src/target/fedora \
     now-playing-build cargo build --release
 ```
 
-The binary is then `target/fedora/release/now-playing`.
+The binaries are then in `target/fedora/release/`.
 
 ## Running from Steam Gaming Mode
 
 Copy the binary to the HTPC, then in Desktop Mode add it to Steam as a
 non-Steam game, with `--server` and `--client` in its launch options if
 needed. Launch it from Gaming Mode like any game.
+
+## The switcher
+
+`now-playing-switcher` runs in the background in Steam's Gaming Mode:
+
+- When music starts on this machine's Snapcast client, it brings Now
+  Playing to the front, launching it if it isn't running.
+- When Kodi starts or resumes playback, it brings Kodi to the front.
+
+It acts when playback starts or resumes, not on a track change or a
+reconnect. In Desktop Mode it does nothing.
+
+It reads which app is in front from gamescope, and whether an app is
+running from Steam's processes. To switch or launch, it asks Steam's UI,
+just as Steam's own menu does, so Steam keeps track of the app in front.
+(Setting gamescope's focus directly doesn't last: Steam puts its own
+choice back.)
+
+### Setting it up
+
+1. **Kodi:** turn on Settings → Services → Control → "Allow remote control
+   from applications on this system". That opens Kodi's JSON-RPC TCP port,
+   9090, which the switcher follows.
+2. **Steam:** turn on its remote debugging, which the switcher uses to talk
+   to Steam's UI, then restart Steam:
+
+   ```
+   touch ~/.steam/steam/.cef-enable-remote-debugging
+   ```
+
+   Steam then listens on `127.0.0.1:8080`. Any program on the machine can
+   control Steam's UI through it; delete the file and restart Steam to turn
+   it off. Kodi's web server also uses port 8080, but on IPv6, so the two
+   don't clash.
+3. **Config:** copy `switcher/switcher.example.toml` to
+   `~/.config/now-playing/switcher.toml` and fill it in. To find an app's
+   gamescope ID, bring it to the front and run:
+
+   ```
+   DISPLAY=:0 xprop -root GAMESCOPE_FOCUSED_APP
+   ```
+
+   A non-Steam game's launch ID is its gamescope ID × 2³² + 0x02000000:
+
+   ```
+   python3 -c 'print(GAMESCOPE_ID << 32 | 0x02000000)'
+   ```
+
+4. **Service:** copy the binary to `~/.local/bin/`, then:
+
+   ```
+   cp switcher/now-playing-switcher.service ~/.config/systemd/user/
+   systemctl --user enable --now now-playing-switcher
+   ```
+
+   Its log, one line per event and decision, is in
+   `journalctl --user -u now-playing-switcher`.
+
+### Usage
+
+```
+now-playing-switcher [--config PATH] [--dry-run]
+```
+
+- `--config`: the config file. Defaults to
+  `$XDG_CONFIG_HOME/now-playing/switcher.toml`, else
+  `~/.config/now-playing/switcher.toml`.
+- `--dry-run`: log what it would do, without switching or launching.
 
 ## Layout
 
@@ -95,7 +170,12 @@ needed. Launch it from Gaming Mode like any game.
 | `app/src/art/` | Fetching and decoding covers |
 | `app/src/debug/` | `--print` and `--fake`, debug builds only |
 | `app/assets/fonts/` | The bundled Noto Sans fonts |
-| `switcher/` | `now-playing-switcher`, which brings players to the front (in progress) |
+| `switcher/` | The `now-playing-switcher` crate: brings players to the front |
+| `switcher/src/listener/` | Following Kodi and Snapcast for starts |
+| `switcher/src/action.rs` | Deciding whether to skip, focus or launch |
+| `switcher/src/steam/` | Steam's running apps, and its UI |
+| `switcher/switcher.example.toml` | An example config |
+| `switcher/now-playing-switcher.service` | The systemd user service |
 | `spikes/sdl-hello/` | The SDL2 spike that tested gamescope |
 
 ## License

@@ -119,3 +119,10 @@ fn default_path_falls_back_to_home() {
     }
     assert_eq!(default_path_from(None, None), None);
 }
+
+#[test]
+fn example_parses() {
+    let config = Config::parse(include_str!("../../switcher.example.toml")).unwrap();
+    assert_eq!(config.kodi.unwrap().app.gamescope, 1234567890);
+    assert_eq!(config.snapcast.unwrap().app.gamescope, 2345678901);
+}

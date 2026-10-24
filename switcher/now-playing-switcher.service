@@ -1,0 +1,17 @@
+# A systemd user service for now-playing-switcher. Install it with:
+#
+#   cp now-playing-switcher.service ~/.config/systemd/user/
+#   systemctl --user enable --now now-playing-switcher
+[Unit]
+Description=Bring Now Playing / Kodi to the front when they start playing
+After=graphical-session.target
+
+[Service]
+# gamescope's X display, where the switcher reads which app is in front.
+Environment=DISPLAY=:0
+ExecStart=%h/.local/bin/now-playing-switcher
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
