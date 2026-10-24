@@ -64,12 +64,13 @@ fn fake_steam(status: &'static str, reply: Value) -> (String, thread::JoinHandle
             // As Chromium does.
             return String::new();
         }
-        write!(
+        // Unchecked: given an error status, the client may close before
+        // reading the body.
+        let _ = write!(
             http,
             "HTTP/1.1 {status}\r\nContent-Length:{}\r\n\r\n{PAGES}",
             PAGES.len()
-        )
-        .unwrap();
+        );
         drop(http);
         if status != "200 OK" {
             return String::new();
