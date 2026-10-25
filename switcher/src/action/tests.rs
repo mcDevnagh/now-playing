@@ -1,3 +1,5 @@
+use std::cell::Cell;
+
 use super::*;
 
 const APP: App = App {
@@ -134,4 +136,46 @@ fn home_outcomes() {
     for (front, outcome) in cases {
         assert_eq!(home_outcome(APP.gamescope, front), outcome);
     }
+}
+
+/// Launches through a fake Steam that starts the app on the `starts_on`th
+/// launch. Returns how many times it asked.
+fn launch_with(starts_on: u32, timeout: Duration) -> Result<u32, String> {
+    let launches = Cell::new(0);
+    let launch = || {
+        launches.set(launches.get() + 1);
+        Ok(())
+    };
+    let running = || Ok(launches.get() >= starts_on);
+    launch_until_running(launch, running, Duration::ZERO, timeout)
+}
+
+#[test]
+fn launch_asks_once_when_it_starts() {
+    assert_eq!(launch_with(1, Duration::from_secs(5)), Ok(1));
+}
+
+/// As just after Steam's UI comes up.
+#[test]
+fn launch_asks_again_until_it_starts() {
+    assert_eq!(launch_with(3, Duration::from_secs(5)), Ok(3));
+}
+
+#[test]
+fn launch_gives_up() {
+    assert_eq!(
+        launch_with(u32::MAX, Duration::ZERO),
+        Err("asked 1 times, but it didn't start within 0 s".to_owned())
+    );
+}
+
+#[test]
+fn launch_errors_are_passed_on() {
+    let timeout = Duration::from_secs(5);
+    let running = || panic!("checked whether it's running after a failed launch");
+    let failed = launch_until_running(|| Err("gone".to_owned()), running, Duration::ZERO, timeout);
+    assert_eq!(failed, Err("gone".to_owned()));
+    let unknown = || Err("/proc: gone".to_owned());
+    let failed = launch_until_running(|| Ok(()), unknown, Duration::ZERO, timeout);
+    assert_eq!(failed, Err("/proc: gone".to_owned()));
 }

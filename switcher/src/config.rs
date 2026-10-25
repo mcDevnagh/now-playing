@@ -2,12 +2,15 @@
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use serde::Deserialize;
 
 use crate::app::App;
 
 const DEFAULT_KODI_ADDRESS: &str = "127.0.0.1:9090";
+/// How long an app launched at start has to come to the front, in seconds.
+const DEFAULT_LAUNCH_AT_START_WAIT: u64 = 30;
 
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -23,8 +26,9 @@ pub struct Kodi {
     pub app: App,
     /// Kodi's JSON-RPC TCP address.
     pub address: String,
-    /// Launch the app once Steam's UI is up.
-    pub launch_at_start: bool,
+    /// Launch the app each time Gaming Mode starts, then go home once it's in
+    /// front, or after this long.
+    pub launch_at_start: Option<Duration>,
 }
 
 /// Our Snapcast client starting to play → show an app.
@@ -36,8 +40,9 @@ pub struct Snapcast {
     pub server: String,
     /// The client to follow [default: this machine's hostname].
     pub client: Option<String>,
-    /// Launch the app once Steam's UI is up.
-    pub launch_at_start: bool,
+    /// Launch the app each time Gaming Mode starts, then go home once it's in
+    /// front, or after this long.
+    pub launch_at_start: Option<Duration>,
 }
 
 /// A `[kodi]` table as written, checked on the way to [`Kodi`].
@@ -49,6 +54,7 @@ struct RawKodi {
     address: Option<String>,
     #[serde(default)]
     launch_at_start: bool,
+    launch_at_start_wait: Option<u64>,
 }
 
 /// A `[snapcast]` table as written, checked on the way to [`Snapcast`].
@@ -61,6 +67,7 @@ struct RawSnapcast {
     client: Option<String>,
     #[serde(default)]
     launch_at_start: bool,
+    launch_at_start_wait: Option<u64>,
 }
 
 impl TryFrom<RawKodi> for Kodi {
@@ -73,7 +80,12 @@ impl TryFrom<RawKodi> for Kodi {
             address: raw
                 .address
                 .unwrap_or_else(|| DEFAULT_KODI_ADDRESS.to_owned()),
-            launch_at_start: launch_at_start("kodi", app, raw.launch_at_start)?,
+            launch_at_start: launch_at_start(
+                "kodi",
+                app,
+                raw.launch_at_start,
+                raw.launch_at_start_wait,
+            )?,
         })
     }
 }
@@ -90,17 +102,36 @@ impl TryFrom<RawSnapcast> for Snapcast {
             app,
             server: raw.server,
             client: raw.client,
-            launch_at_start: launch_at_start("snapcast", app, raw.launch_at_start)?,
+            launch_at_start: launch_at_start(
+                "snapcast",
+                app,
+                raw.launch_at_start,
+                raw.launch_at_start_wait,
+            )?,
         })
     }
 }
 
-/// A table's `launch_at_start`, checked: launching needs a launch ID.
-fn launch_at_start(table: &str, app: App, launch_at_start: bool) -> Result<bool, String> {
-    if launch_at_start && app.launch.is_none() {
-        return Err(format!("[{table}] `launch_at_start` needs `launch`"));
+/// A table's `launch_at_start` and `launch_at_start_wait`, checked:
+/// launching needs a launch ID, and the wait is only for launching.
+fn launch_at_start(
+    table: &str,
+    app: App,
+    launch_at_start: bool,
+    wait: Option<u64>,
+) -> Result<Option<Duration>, String> {
+    match (launch_at_start, wait) {
+        (true, _) if app.launch.is_none() => {
+            Err(format!("[{table}] `launch_at_start` needs `launch`"))
+        }
+        (true, wait) => Ok(Some(Duration::from_secs(
+            wait.unwrap_or(DEFAULT_LAUNCH_AT_START_WAIT),
+        ))),
+        (false, Some(_)) => Err(format!(
+            "[{table}] `launch_at_start_wait` needs `launch_at_start = true`"
+        )),
+        (false, None) => Ok(None),
     }
-    Ok(launch_at_start)
 }
 
 impl Config {
@@ -119,14 +150,14 @@ impl Config {
         Ok(config)
     }
 
-    /// The apps to launch once Steam's UI is up: those whose tables set
-    /// `launch_at_start`.
-    pub fn launch_at_start(&self) -> Vec<App> {
+    /// The apps to launch once Steam's UI is up, each with how long it has
+    /// to come to the front: those whose tables set `launch_at_start`.
+    pub fn launch_at_start(&self) -> Vec<(App, Duration)> {
         let kodi = self.kodi.as_ref().map(|t| (t.app, t.launch_at_start));
         let snapcast = self.snapcast.as_ref().map(|t| (t.app, t.launch_at_start));
         kodi.into_iter()
             .chain(snapcast)
-            .filter_map(|(app, at_start)| at_start.then_some(app))
+            .filter_map(|(app, wait)| Some((app, wait?)))
             .collect()
     }
 }

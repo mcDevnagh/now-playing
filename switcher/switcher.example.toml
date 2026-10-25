@@ -6,10 +6,12 @@
 # it. Without `launch`, the app can be brought to the front but not started.
 # Leave a table out to not follow that player.
 #
-# Any table can also set `launch_at_start = true`, which needs `launch`: once
-# Steam's UI is up in Gaming Mode, the switcher launches the app (unless it's
-# already running), waits for it to come to the front, then goes back to
-# Steam's home, leaving it running in the background.
+# Any table can also set `launch_at_start = true`, which needs `launch`: each
+# time Gaming Mode starts, once Steam's UI is up, the switcher launches the
+# app (unless it's already running), waits for it to come to the front, then
+# goes back to Steam's home, leaving it running in the background. An app
+# that opens no window until it's used never comes to the front, so after
+# `launch_at_start_wait` seconds (default 30) it goes home anyway.
 
 # Kodi starts or resumes playback → bring Kodi to the front. Kodi has to be
 # running to play anything, so it never needs launching.
