@@ -9,9 +9,11 @@ It's built for a TV on a Linux HTPC, launched from Steam's Gaming Mode
 (gamescope), but runs on any Linux desktop with SDL2.
 
 A companion service, [`now-playing-switcher`](#the-switcher), brings it to
-the front when music starts, and Kodi to the front when Kodi plays.
+the front when music starts, Kodi to the front when Kodi plays, and
+[UxPlay] to the front when a device mirrors its screen to it.
 
 [Snapcast]: https://github.com/badaix/snapcast
+[UxPlay]: https://github.com/FDH2/UxPlay
 
 ## How it works
 
@@ -66,9 +68,10 @@ cargo build --release
 cargo test
 ```
 
-This builds both binaries, `target/release/now-playing` and
-`target/release/now-playing-switcher`. The switcher needs no system
-libraries.
+This builds the three binaries in `target/release/`: `now-playing`,
+`now-playing-switcher` and
+[`now-playing-placeholder`](#the-placeholder-window). The switcher needs no
+system libraries; the placeholder, like Now Playing, links SDL2.
 
 The binary links the system libSDL2 and glibc, so build it against the
 same versions as the machine it runs on. For a Fedora-based target such
@@ -95,6 +98,9 @@ needed. Launch it from Gaming Mode like any game.
 - When music starts on this machine's Snapcast client, it brings Now
   Playing to the front, launching it if it isn't running.
 - When Kodi starts or resumes playback, it brings Kodi to the front.
+- When a device starts mirroring its screen to UxPlay, it brings UxPlay to
+  the front. UxPlay has to be running to accept a connection, so it's never
+  launched for a cast.
 - Optionally, each time Gaming Mode starts, it launches apps in the
   background, such as Kodi, so they're ready to play: once Steam's UI is
   up, it launches each one, waits for it to come to the front, then goes
@@ -102,6 +108,10 @@ needed. Launch it from Gaming Mode like any game.
 
 It acts when playback starts or resumes, not on a track change or a
 reconnect. In Desktop Mode it does nothing.
+
+UxPlay reports nothing about a cast, so the switcher follows its video
+window instead: UxPlay opens one when mirroring starts and closes it when
+mirroring stops. Audio-only AirPlay opens no window, so it doesn't switch.
 
 It reads which app is in front from gamescope, and whether an app is
 running from Steam's processes. To switch or launch, it asks Steam's UI,
@@ -114,7 +124,8 @@ choice back.)
 1. **Kodi:** turn on Settings → Services → Control → "Allow remote control
    from applications on this system". That opens Kodi's JSON-RPC TCP port,
    9090, which the switcher follows.
-2. **Steam:** turn on its remote debugging, which the switcher uses to talk
+2. **UxPlay:** see [Setting up UxPlay](#setting-up-uxplay) below.
+3. **Steam:** turn on its remote debugging, which the switcher uses to talk
    to Steam's UI, then restart Steam:
 
    ```
@@ -125,7 +136,7 @@ choice back.)
    control Steam's UI through it; delete the file and restart Steam to turn
    it off. Kodi's web server also uses port 8080, but on IPv6, so the two
    don't clash.
-3. **Config:** copy `switcher/switcher.example.toml` to
+4. **Config:** copy `switcher/switcher.example.toml` to
    `~/.config/now-playing/switcher.toml` and fill it in. To find an app's
    gamescope ID, bring it to the front and run:
 
@@ -147,7 +158,7 @@ choice back.)
    `launch_at_start_wait` seconds (default 30) the switcher goes home
    anyway; set it lower for such an app.
 
-4. **Service:** copy the binary to `~/.local/bin/`, then:
+5. **Service:** copy the binary to `~/.local/bin/`, then:
 
    ```
    cp switcher/now-playing-switcher.service ~/.config/systemd/user/
@@ -156,6 +167,38 @@ choice back.)
 
    Its log, one line per event and decision, is in
    `journalctl --user -u now-playing-switcher`.
+
+### Setting up UxPlay
+
+UxPlay opens no window until a device casts to it, so Steam, which waits
+for a game's window, would stay on its launching screen. Launch it through a
+script that starts [`now-playing-placeholder`](#the-placeholder-window)
+beside it, which gives Steam a window to show:
+
+```sh
+#!/bin/bash
+# Launches UxPlay, with a placeholder window to show until a device casts.
+now-playing-placeholder --image ~/.config/now-playing/airplay.png &
+placeholder=$!
+trap 'kill "$placeholder"' EXIT
+uxplay "$@"
+```
+
+1. Save it, say as `~/.local/bin/uxplay-steam`, and make it executable.
+2. In Desktop Mode, add it to Steam as a non-Steam game, with UxPlay's own
+   options, such as `-n` for its name, in its launch options.
+3. Launch it from Gaming Mode to find its gamescope ID, as in step 4 above,
+   and give the switcher an `[uxplay]` table with its launch ID and
+   `launch_at_start = true`, so it's running to accept a connection.
+
+While a device mirrors, UxPlay's video window covers the placeholder; when
+it stops, the placeholder shows again. The switcher finds UxPlay's display
+from its process, and its video window by its `WM_CLASS` class,
+`GStreamer`; set `window_class` if yours differs:
+
+```
+DISPLAY=:1 xprop WM_CLASS    # then click the video window
+```
 
 ### Usage
 
@@ -167,6 +210,23 @@ now-playing-switcher [--config PATH] [--dry-run]
   `$XDG_CONFIG_HOME/now-playing/switcher.toml`, else
   `~/.config/now-playing/switcher.toml`.
 - `--dry-run`: log what it would do, without switching or launching.
+
+## The placeholder window
+
+`now-playing-placeholder` is a full-screen black window for an app that
+opens none until it's used, such as UxPlay. It ignores input and quits on
+SIGTERM.
+
+```
+now-playing-placeholder [--image PATH] [--title TITLE]
+```
+
+- `--image`: a PNG or JPEG to draw in the middle of the screen. It's never
+  scaled: an image the size of the screen fills it, a smaller one is
+  centred on black, and a larger one is cropped. If it can't be loaded, the
+  window stays black. No image comes with it; for UxPlay, a white AirPlay
+  logo on black works well.
+- `--title`: the window's title. Defaults to `AirPlay`.
 
 ## Layout
 
@@ -183,12 +243,14 @@ now-playing-switcher [--config PATH] [--dry-run]
 | `app/src/debug/` | `--print` and `--fake`, debug builds only |
 | `app/assets/fonts/` | The bundled Noto Sans fonts |
 | `switcher/` | The `now-playing-switcher` crate: brings players to the front |
-| `switcher/src/listener/` | Following Kodi and Snapcast for starts |
+| `switcher/src/listener/` | Following Kodi, Snapcast and UxPlay for starts |
 | `switcher/src/action.rs` | Deciding whether to skip, focus or launch |
 | `switcher/src/startup.rs` | Launching apps each time Gaming Mode starts |
-| `switcher/src/steam/` | Steam's running apps, and its UI |
+| `switcher/src/windows.rs` | Following a display's windows, for UxPlay's |
+| `switcher/src/steam/` | Steam's running apps, their displays, and its UI |
 | `switcher/switcher.example.toml` | An example config |
 | `switcher/now-playing-switcher.service` | The systemd user service |
+| `placeholder/` | The `now-playing-placeholder` crate: a window for UxPlay |
 | `spikes/sdl-hello/` | The SDL2 spike that tested gamescope |
 
 ## License

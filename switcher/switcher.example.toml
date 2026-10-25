@@ -32,3 +32,14 @@ server = "snapserver:1705"
 # The Snapcast client to follow, by id or host name. Defaults to this
 # machine's hostname.
 # client = "htpc"
+
+# A device starts mirroring its screen to UxPlay → bring UxPlay to the front.
+# UxPlay has to be running to accept a connection, so a cast never launches
+# it: set `launch_at_start` to have it running. Audio-only AirPlay opens no
+# window, so it doesn't switch.
+[uxplay]
+launch = 14846795755745705984
+launch_at_start = true
+# The WM_CLASS class of UxPlay's video window, which it opens while a device
+# mirrors and closes when it stops. This is the default.
+# window_class = "GStreamer"
