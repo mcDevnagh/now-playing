@@ -71,4 +71,57 @@ fn scans_pid_directories() {
 #[test]
 fn missing_proc_is_an_error() {
     assert!(is_running_in(Path::new("/nonexistent/proc"), NOW_PLAYING).is_err());
+    let err = display_of_in(Path::new("/nonexistent/proc"), NOW_PLAYING).unwrap_err();
+    assert!(err.starts_with("/nonexistent/proc: "), "{err}");
+}
+
+#[test]
+fn finds_the_display() {
+    assert_eq!(
+        display(b"HOME=/home/me\0DISPLAY=:1\0SteamAppId=0\0").as_deref(),
+        Some(":1")
+    );
+    assert_eq!(display(b"DISPLAY=:1").as_deref(), Some(":1"));
+}
+
+#[test]
+fn no_display() {
+    for environ in [
+        &b""[..],
+        b"HOME=/home/me\0",
+        b"DISPLAY=\0",
+        b"WAYLAND_DISPLAY=wayland-1\0",
+    ] {
+        assert_eq!(display(environ), None, "{environ:?}");
+    }
+}
+
+#[test]
+fn reads_the_apps_display() {
+    let proc = std::env::temp_dir().join(format!("switcher-proc-display-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&proc);
+    let add = |name: &str, cmdline: &[u8], environ: &[u8]| {
+        fs::create_dir_all(proc.join(name)).unwrap();
+        fs::write(proc.join(name).join("cmdline"), cmdline).unwrap();
+        fs::write(proc.join(name).join("environ"), environ).unwrap();
+    };
+    add("1", &cmdline(&["/sbin/init"]), b"DISPLAY=:0\0");
+    let err = display_of_in(&proc, NOW_PLAYING).unwrap_err();
+    assert_eq!(err, "app 2457742405 isn't running");
+
+    add(
+        "4652",
+        &reaper("AppId=2457742405", "now-playing"),
+        b"HOME=/home/me\0",
+    );
+    let err = display_of_in(&proc, NOW_PLAYING).unwrap_err();
+    assert_eq!(err, "app 2457742405 has no DISPLAY");
+
+    add(
+        "4652",
+        &reaper("AppId=2457742405", "now-playing"),
+        b"DISPLAY=:1\0",
+    );
+    assert_eq!(display_of_in(&proc, NOW_PLAYING).unwrap(), ":1");
+    fs::remove_dir_all(&proc).unwrap();
 }
