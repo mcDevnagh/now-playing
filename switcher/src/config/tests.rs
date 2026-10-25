@@ -212,4 +212,7 @@ fn example_parses() {
     let config = Config::parse(include_str!("../../switcher.example.toml")).unwrap();
     assert_eq!(config.kodi.unwrap().app.gamescope, 1234567890);
     assert_eq!(config.snapcast.unwrap().app.gamescope, 2345678901);
+    let uxplay = config.uxplay.unwrap();
+    assert_eq!(uxplay.app.gamescope, 3456789012);
+    assert_eq!(uxplay.window_class, "GStreamer");
 }
