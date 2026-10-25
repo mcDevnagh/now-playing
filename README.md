@@ -95,9 +95,10 @@ needed. Launch it from Gaming Mode like any game.
 - When music starts on this machine's Snapcast client, it brings Now
   Playing to the front, launching it if it isn't running.
 - When Kodi starts or resumes playback, it brings Kodi to the front.
-- Optionally, once Steam's UI is up after login, it launches apps in the
-  background, such as Kodi, so they're ready to play: it launches each
-  one, waits for it to come to the front, then goes back to Steam's home.
+- Optionally, each time Gaming Mode starts, it launches apps in the
+  background, such as Kodi, so they're ready to play: once Steam's UI is
+  up, it launches each one, waits for it to come to the front, then goes
+  back to Steam's home.
 
 It acts when playback starts or resumes, not on a track change or a
 reconnect. In Desktop Mode it does nothing.
@@ -138,9 +139,13 @@ choice back.)
    python3 -c 'print(GAMESCOPE_ID << 32 | 0x02000000)'
    ```
 
-   To launch an app at login, set `launch_at_start = true` in its table,
-   with its launch ID. It isn't launched again if it's already running, as
-   after a restart of the switcher.
+   To launch an app whenever Gaming Mode starts, at login or from Desktop
+   Mode, set `launch_at_start = true` in its table, with its launch ID. It
+   isn't launched again if it's already running, as after a restart of the
+   switcher. An app that opens no window until it's used never comes to
+   the front: Steam stays on its launching screen. So after
+   `launch_at_start_wait` seconds (default 30) the switcher goes home
+   anyway; set it lower for such an app.
 
 4. **Service:** copy the binary to `~/.local/bin/`, then:
 
@@ -180,7 +185,7 @@ now-playing-switcher [--config PATH] [--dry-run]
 | `switcher/` | The `now-playing-switcher` crate: brings players to the front |
 | `switcher/src/listener/` | Following Kodi and Snapcast for starts |
 | `switcher/src/action.rs` | Deciding whether to skip, focus or launch |
-| `switcher/src/startup.rs` | Waiting for Steam's UI to launch apps at start |
+| `switcher/src/startup.rs` | Launching apps each time Gaming Mode starts |
 | `switcher/src/steam/` | Steam's running apps, and its UI |
 | `switcher/switcher.example.toml` | An example config |
 | `switcher/now-playing-switcher.service` | The systemd user service |

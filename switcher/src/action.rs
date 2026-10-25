@@ -14,8 +14,8 @@ pub enum Request {
     /// Bring the app to the front, launching it if it isn't running.
     Show(App),
     /// Launch the app if it isn't running, then go back to Steam's home, so
-    /// it waits in the background.
-    LaunchAtStart(App),
+    /// it waits in the background: once it's in front, or after the wait.
+    LaunchAtStart(App, Duration),
 }
 
 /// What to do for an app that asked to be shown.
@@ -49,17 +49,19 @@ enum StartDecision {
 /// How long Steam and gamescope take to act on a focus request, before
 /// checking it.
 const SETTLE: Duration = Duration::from_millis(200);
-/// How long an app launched at start has to come to the front.
-const START_TIMEOUT: Duration = Duration::from_secs(30);
-/// How often to check whether it has.
+/// How long an app launched at start has to start.
+const LAUNCH_TIMEOUT: Duration = Duration::from_secs(30);
+/// How often to check whether it has, and whether it's started.
 const START_CHECK: Duration = Duration::from_millis(250);
+/// How long a launched app has to start before asking Steam again.
+const LAUNCH_RETRY: Duration = Duration::from_secs(5);
 
 /// Carries out `request` on `display`, logging what it did. With `dry_run`,
 /// it only logs what it would do.
 pub fn handle(request: Request, display: &str, dry_run: bool) {
     match request {
         Request::Show(app) => show(app, display, dry_run),
-        Request::LaunchAtStart(app) => launch_at_start(app, display, dry_run),
+        Request::LaunchAtStart(app, wait) => launch_at_start(app, wait, display, dry_run),
     }
 }
 
@@ -94,8 +96,8 @@ fn show(app: App, display: &str, dry_run: bool) {
 }
 
 /// Launches `app` on `display` if it isn't running, then goes back to
-/// Steam's home.
-fn launch_at_start(app: App, display: &str, dry_run: bool) {
+/// Steam's home once it's in front, or after `wait`.
+fn launch_at_start(app: App, wait: Duration, display: &str, dry_run: bool) {
     let gamescope = match Gamescope::connect(display) {
         Ok(gamescope) => gamescope,
         Err(e) => return eprintln!("switcher: {app}: not launched at start ({e})"),
@@ -118,7 +120,7 @@ fn launch_at_start(app: App, display: &str, dry_run: bool) {
         Ok(StartDecision::Launch(id)) => {
             eprintln!(
                 "switcher: {app}: at start: {}",
-                launch_then_home(&gamescope, app.gamescope, id)
+                launch_then_home(&gamescope, app.gamescope, id, wait)
             )
         }
         Ok(StartDecision::CantLaunch) => {
@@ -128,40 +130,81 @@ fn launch_at_start(app: App, display: &str, dry_run: bool) {
     }
 }
 
-/// Launches `app` with `launch_id`, waits for it to come to the front, then
-/// shows Steam's home. Returns the outcome, to log.
-fn launch_then_home(gamescope: &Gamescope, app: u32, launch_id: u64) -> String {
-    if let Err(e) = steam::ui::launch(launch_id) {
-        return format!("couldn't launch {launch_id} ({e})");
-    }
+/// Launches `app` with `launch_id`, waits for it to come to the front, for
+/// up to `wait`, then shows Steam's home. Returns the outcome, to log.
+fn launch_then_home(gamescope: &Gamescope, app: u32, launch_id: u64, wait: Duration) -> String {
+    let asked = launch_until_running(
+        || steam::ui::launch(launch_id),
+        || steam::is_running(app).map_err(|e| format!("/proc: {e}")),
+        LAUNCH_RETRY,
+        LAUNCH_TIMEOUT,
+    );
+    let mut launched = match asked {
+        Ok(1) => format!("launched {launch_id}"),
+        Ok(asked) => format!("launched {launch_id} (asked {asked} times)"),
+        Err(e) => return format!("couldn't launch {launch_id} ({e})"),
+    };
     // Steam brings the app to the front once it's up, so going home any
-    // sooner would be undone.
-    let deadline = Instant::now() + START_TIMEOUT;
+    // sooner would be undone. Some apps open no window until they're used,
+    // such as UxPlay until a device casts to it; meanwhile Steam stays in
+    // front on its launching screen, so go home from that after `wait`.
+    let deadline = Instant::now() + wait;
     loop {
         match gamescope.focused_app() {
             Ok(Some(front)) if front == app => break,
             Ok(Some(_)) if Instant::now() >= deadline => {
-                return format!(
-                    "launched {launch_id}, but it didn't come to the front within {} s, \
-                     so not going home",
-                    START_TIMEOUT.as_secs()
+                launched += &format!(
+                    ", but it didn't come to the front within {} s",
+                    wait.as_secs()
                 );
+                break;
             }
             Ok(Some(_)) => thread::sleep(START_CHECK),
-            Ok(None) => return format!("launched {launch_id}, then left Gaming Mode"),
+            Ok(None) => return format!("{launched}, then left Gaming Mode"),
             Err(e) => {
-                return format!("launched {launch_id}, but can't tell when it's up ({e})");
+                return format!("{launched}, but can't tell when it's up ({e})");
             }
         }
     }
     if let Err(e) = steam::ui::home() {
-        return format!("launched {launch_id}, but couldn't go home ({e})");
+        return format!("{launched}, but couldn't go home ({e})");
     }
     thread::sleep(SETTLE);
-    format!(
-        "launched {launch_id}, {}",
-        home_outcome(app, gamescope.focused_app())
-    )
+    format!("{launched}, {}", home_outcome(app, gamescope.focused_app()))
+}
+
+/// Asks Steam to `launch` an app until it's `running`, asking again every
+/// `retry`, for up to `timeout`. Just after Steam's UI comes up, Steam can
+/// ignore a launch. It only asks while the app isn't running, as launching
+/// a running app makes Steam show an error. Returns how many times it asked.
+fn launch_until_running(
+    mut launch: impl FnMut() -> Result<(), String>,
+    mut running: impl FnMut() -> Result<bool, String>,
+    retry: Duration,
+    timeout: Duration,
+) -> Result<u32, String> {
+    let deadline = Instant::now() + timeout;
+    let mut asked = 0;
+    loop {
+        launch()?;
+        asked += 1;
+        let ask_again = (Instant::now() + retry).min(deadline);
+        loop {
+            if running()? {
+                return Ok(asked);
+            }
+            if Instant::now() >= ask_again {
+                break;
+            }
+            thread::sleep(START_CHECK);
+        }
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "asked {asked} times, but it didn't start within {} s",
+                timeout.as_secs()
+            ));
+        }
+    }
 }
 
 /// The outcome of going home from `app`, given the app in front afterwards.

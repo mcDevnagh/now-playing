@@ -46,6 +46,18 @@ impl Gamescope {
         Ok(cardinal(&reply))
     }
 
+    /// Blocks until the connection closes, as when gamescope exits on
+    /// leaving Gaming Mode. Returns why it closed.
+    pub fn wait_closed(self) -> String {
+        // No events are selected, but the server may still send some, such
+        // as MappingNotify.
+        loop {
+            if let Err(e) = self.conn.wait_for_event() {
+                return e.to_string();
+            }
+        }
+    }
+
     /// The atom called `name`; `None` if no client has created it, in which
     /// case no window has a property by that name.
     fn atom(&self, name: &str) -> Result<Option<Atom>, String> {

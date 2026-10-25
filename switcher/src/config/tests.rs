@@ -11,6 +11,7 @@ const FULL: &str = r#"
     server = "snapserver:1705"
     client = "TV"
     launch_at_start = true
+    launch_at_start_wait = 5
 "#;
 
 #[test]
@@ -25,7 +26,7 @@ fn full() {
                     launch: None,
                 },
                 address: "kodi:9090".to_owned(),
-                launch_at_start: false,
+                launch_at_start: None,
             }),
             snapcast: Some(Snapcast {
                 app: App {
@@ -34,7 +35,7 @@ fn full() {
                 },
                 server: "snapserver:1705".to_owned(),
                 client: Some("TV".to_owned()),
-                launch_at_start: true,
+                launch_at_start: Some(Duration::from_secs(5)),
             }),
         }
     );
@@ -44,15 +45,18 @@ fn full() {
 fn launch_at_start() {
     assert_eq!(
         Config::parse(FULL).unwrap().launch_at_start(),
-        [App {
-            gamescope: 2457742405,
-            launch: Some(10555923251500941312),
-        }]
+        [(
+            App {
+                gamescope: 2457742405,
+                launch: Some(10555923251500941312),
+            },
+            Duration::from_secs(5)
+        )]
     );
     let kodi = "[kodi]\nlaunch = 10375237194288726016\nlaunch_at_start = true";
     let config = Config::parse(kodi).unwrap();
-    assert!(config.kodi.as_ref().unwrap().launch_at_start);
-    assert_eq!(config.launch_at_start(), [config.kodi.unwrap().app]);
+    let wait = Duration::from_secs(DEFAULT_LAUNCH_AT_START_WAIT);
+    assert_eq!(config.launch_at_start(), [(config.kodi.unwrap().app, wait)]);
     assert_eq!(
         Config::parse("[kodi]\napp = 1").unwrap().launch_at_start(),
         []
@@ -119,6 +123,14 @@ fn errors() {
             "[snapcast] `launch_at_start` needs `launch`",
         ),
         ("[kodi]\napp = 1\nlaunch_at_start = 1", "launch_at_start"),
+        (
+            "[kodi]\nlaunch = 10375237194288726016\nlaunch_at_start_wait = 5",
+            "[kodi] `launch_at_start_wait` needs `launch_at_start = true`",
+        ),
+        (
+            "[kodi]\nlaunch = 10375237194288726016\nlaunch_at_start = true\nlaunch_at_start_wait = -1",
+            "launch_at_start_wait",
+        ),
         ("[kodi]\napp = 1\n[spotify]", "spotify"),
         ("app = 1", "app"),
         ("[kodi\napp = 1", "kodi"),
