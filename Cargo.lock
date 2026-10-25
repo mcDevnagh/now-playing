@@ -511,6 +511,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "now-playing-placeholder"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "image",
+ "sdl2",
+]
+
+[[package]]
 name = "now-playing-switcher"
 version = "0.1.0"
 dependencies = [
