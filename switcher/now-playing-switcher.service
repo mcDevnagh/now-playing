@@ -3,7 +3,7 @@
 #   cp now-playing-switcher.service ~/.config/systemd/user/
 #   systemctl --user enable --now now-playing-switcher
 [Unit]
-Description=Bring Now Playing / Kodi to the front when they start playing
+Description=Bring Now Playing / Kodi / UxPlay to the front when they start playing
 After=graphical-session.target
 
 [Service]

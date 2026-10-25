@@ -1,5 +1,5 @@
-//! Brings Now Playing or Kodi to the front in Steam Gaming Mode when they
-//! start playing.
+//! Brings Now Playing, Kodi or UxPlay to the front in Steam Gaming Mode when
+//! they start playing, or a device starts mirroring to UxPlay.
 
 mod action;
 mod app;
@@ -19,7 +19,7 @@ use clap::Parser;
 
 use config::Config;
 
-/// Brings Now Playing or Kodi to the front when they start playing.
+/// Brings Now Playing, Kodi or UxPlay to the front when they start playing.
 #[derive(Parser)]
 #[command(version, about)]
 struct Args {
