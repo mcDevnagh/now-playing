@@ -6,6 +6,7 @@ mod app;
 mod config;
 mod gamescope;
 mod listener;
+mod startup;
 mod steam;
 
 use std::path::PathBuf;
@@ -35,8 +36,10 @@ fn main() -> ExitCode {
         eprintln!("switcher: no --config given, and neither $XDG_CONFIG_HOME nor $HOME is set");
         return ExitCode::FAILURE;
     };
-    let listeners = match Config::load(&path).and_then(|config| listener::from_config(&config)) {
-        Ok(listeners) => listeners,
+    let loaded = Config::load(&path)
+        .and_then(|config| Ok((listener::from_config(&config)?, config.launch_at_start())));
+    let (listeners, at_start) = match loaded {
+        Ok(loaded) => loaded,
         Err(e) => {
             eprintln!("switcher: {e}");
             return ExitCode::FAILURE;
@@ -50,8 +53,13 @@ fn main() -> ExitCode {
     }
 
     let display = gamescope::display();
-    for app in requests {
-        action::show(app, &display, args.dry_run);
+    if !at_start.is_empty() {
+        let display = display.clone();
+        let show = show.clone();
+        thread::spawn(move || startup::run(at_start, &display, show));
+    }
+    for request in requests {
+        action::handle(request, &display, args.dry_run);
     }
     unreachable!("the channel's sender is kept alive by `show`")
 }

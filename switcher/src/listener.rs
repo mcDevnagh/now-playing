@@ -8,15 +8,15 @@ use std::sync::mpsc::Sender;
 
 use now_playing_core::hostname;
 
-use crate::app::App;
+use crate::action::Request;
 use crate::config::Config;
 
-/// Follows a player, sending its [`App`] on `show` whenever the app should
-/// come to the front. Holds everything it needs, such as addresses; the
+/// Follows a player, sending [`Request::Show`] with its app on `show`
+/// whenever the app should come to the front. Holds everything it needs, such as addresses; the
 /// rules for when to ask are its own.
 pub trait Listener: Send {
     /// Runs forever, reconnecting as needed.
-    fn run(&mut self, show: Sender<App>) -> !;
+    fn run(&mut self, show: Sender<Request>) -> !;
 }
 
 /// The listeners `config` asks for.
