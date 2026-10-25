@@ -9,6 +9,8 @@ use serde::Deserialize;
 use crate::app::App;
 
 const DEFAULT_KODI_ADDRESS: &str = "127.0.0.1:9090";
+/// The `WM_CLASS` class of GStreamer's video window, which UxPlay opens.
+const DEFAULT_UXPLAY_WINDOW_CLASS: &str = "GStreamer";
 /// How long an app launched at start has to come to the front, in seconds.
 const DEFAULT_LAUNCH_AT_START_WAIT: u64 = 30;
 
@@ -17,6 +19,7 @@ const DEFAULT_LAUNCH_AT_START_WAIT: u64 = 30;
 pub struct Config {
     pub kodi: Option<Kodi>,
     pub snapcast: Option<Snapcast>,
+    pub uxplay: Option<Uxplay>,
 }
 
 /// Kodi playback → show Kodi.
@@ -45,6 +48,19 @@ pub struct Snapcast {
     pub launch_at_start: Option<Duration>,
 }
 
+/// UxPlay's video window opening, as a device starts mirroring → show
+/// UxPlay.
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "RawUxplay")]
+pub struct Uxplay {
+    pub app: App,
+    /// The `WM_CLASS` class of UxPlay's video window.
+    pub window_class: String,
+    /// Launch the app each time Gaming Mode starts, then go home once it's in
+    /// front, or after this long.
+    pub launch_at_start: Option<Duration>,
+}
+
 /// A `[kodi]` table as written, checked on the way to [`Kodi`].
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -65,6 +81,18 @@ struct RawSnapcast {
     launch: Option<u64>,
     server: String,
     client: Option<String>,
+    #[serde(default)]
+    launch_at_start: bool,
+    launch_at_start_wait: Option<u64>,
+}
+
+/// A `[uxplay]` table as written, checked on the way to [`Uxplay`].
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawUxplay {
+    app: Option<u32>,
+    launch: Option<u64>,
+    window_class: Option<String>,
     #[serde(default)]
     launch_at_start: bool,
     launch_at_start_wait: Option<u64>,
@@ -112,6 +140,29 @@ impl TryFrom<RawSnapcast> for Snapcast {
     }
 }
 
+impl TryFrom<RawUxplay> for Uxplay {
+    type Error = String;
+
+    fn try_from(raw: RawUxplay) -> Result<Self, String> {
+        if raw.window_class.as_deref() == Some("") {
+            return Err("[uxplay] `window_class` is empty".to_owned());
+        }
+        let app = App::new(raw.app, raw.launch).map_err(|e| format!("[uxplay] {e}"))?;
+        Ok(Self {
+            app,
+            window_class: raw
+                .window_class
+                .unwrap_or_else(|| DEFAULT_UXPLAY_WINDOW_CLASS.to_owned()),
+            launch_at_start: launch_at_start(
+                "uxplay",
+                app,
+                raw.launch_at_start,
+                raw.launch_at_start_wait,
+            )?,
+        })
+    }
+}
+
 /// A table's `launch_at_start` and `launch_at_start_wait`, checked:
 /// launching needs a launch ID, and the wait is only for launching.
 fn launch_at_start(
@@ -144,8 +195,8 @@ impl Config {
     /// Parses and checks a config file's contents.
     pub fn parse(text: &str) -> Result<Self, String> {
         let config: Self = toml::from_str(text).map_err(|e| e.to_string())?;
-        if config.kodi.is_none() && config.snapcast.is_none() {
-            return Err("needs a [kodi] or [snapcast] table".to_owned());
+        if config.kodi.is_none() && config.snapcast.is_none() && config.uxplay.is_none() {
+            return Err("needs a [kodi], [snapcast] or [uxplay] table".to_owned());
         }
         Ok(config)
     }
@@ -155,8 +206,10 @@ impl Config {
     pub fn launch_at_start(&self) -> Vec<(App, Duration)> {
         let kodi = self.kodi.as_ref().map(|t| (t.app, t.launch_at_start));
         let snapcast = self.snapcast.as_ref().map(|t| (t.app, t.launch_at_start));
+        let uxplay = self.uxplay.as_ref().map(|t| (t.app, t.launch_at_start));
         kodi.into_iter()
             .chain(snapcast)
+            .chain(uxplay)
             .filter_map(|(app, wait)| Some((app, wait?)))
             .collect()
     }
