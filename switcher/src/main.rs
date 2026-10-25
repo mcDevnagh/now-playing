@@ -8,6 +8,11 @@ mod gamescope;
 mod listener;
 mod startup;
 mod steam;
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "used by the UxPlay listener, still to come")
+)]
+mod windows;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
