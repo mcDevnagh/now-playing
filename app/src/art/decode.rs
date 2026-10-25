@@ -2,12 +2,10 @@
 
 use image::{DynamicImage, GenericImageView};
 
-/// Covers larger than this are scaled down; the screen shows them at about
-/// 670 px on a 1080p TV.
-const MAX_SIDE: u32 = 1024;
 /// The background is the cover shrunk to this and blurred, then drawn
-/// stretched with linear filtering. Each pixel covers about 30 on a 1080p
-/// TV, so the blur works out at about 60 px, as on the old web page.
+/// stretched with linear filtering to cover the screen. On a 16:9 screen
+/// each pixel covers about 2.8vh, so the blur works out at about 5.5vh, as
+/// on the old web page.
 const BLUR_SIDE: u32 = 64;
 const BLUR_SIGMA: f32 = 2.0;
 /// Corner radius as a fraction of the side: 1.5vh on a 62vh cover, as on
@@ -30,15 +28,16 @@ pub struct Cover {
 }
 
 /// Decodes a JPEG or PNG cover, cropped to a centred square like CSS
-/// `object-fit: cover`. Anything else is an error, and the screen then shows
-/// the track without art.
-pub fn decode(url: &str, bytes: &[u8]) -> Result<Cover, String> {
+/// `object-fit: cover`, and scaled down to `max_side` if larger: the side
+/// it's shown at. Anything else is an error, and the screen then shows the
+/// track without art.
+pub fn decode(url: &str, bytes: &[u8], max_side: u32) -> Result<Cover, String> {
     let image = image::load_from_memory(bytes).map_err(|e| e.to_string())?;
     let (width, height) = image.dimensions();
     let side = width.min(height);
     let mut square = image.crop_imm((width - side) / 2, (height - side) / 2, side, side);
-    if side > MAX_SIDE {
-        square = square.thumbnail(MAX_SIDE, MAX_SIDE);
+    if side > max_side {
+        square = square.thumbnail(max_side, max_side);
     }
     let blur = rgba(&square.thumbnail(BLUR_SIDE, BLUR_SIDE).blur(BLUR_SIGMA));
     let mut image = rgba(&square);

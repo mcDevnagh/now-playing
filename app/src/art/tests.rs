@@ -30,7 +30,7 @@ fn pixel(image: &Image, x: u32, y: u32) -> [u8; 4] {
 #[test]
 fn decodes_jpeg_and_png() {
     for format in [ImageFormat::Jpeg, ImageFormat::Png] {
-        let cover = decode("u", &encoded(100, 100, format)).unwrap();
+        let cover = decode("u", &encoded(100, 100, format), 1024).unwrap();
         assert_eq!(
             (cover.image.width, cover.image.height),
             (100, 100),
@@ -48,7 +48,7 @@ fn decodes_jpeg_and_png() {
 #[test]
 fn crops_to_a_centred_square() {
     // 200×100: the middle 100×100 is half red, half blue.
-    let cover = decode("u", &encoded(200, 100, ImageFormat::Png)).unwrap();
+    let cover = decode("u", &encoded(200, 100, ImageFormat::Png), 1024).unwrap();
     assert_eq!((cover.image.width, cover.image.height), (100, 100));
     assert_eq!(pixel(&cover.image, 25, 50), [255, 0, 0, 255]);
     assert_eq!(pixel(&cover.image, 75, 50), [0, 0, 255, 255]);
@@ -56,13 +56,19 @@ fn crops_to_a_centred_square() {
 
 #[test]
 fn scales_large_covers_down() {
-    let cover = decode("u", &encoded(3000, 3000, ImageFormat::Jpeg)).unwrap();
-    assert_eq!((cover.image.width, cover.image.height), (1024, 1024));
+    let cover = decode("u", &encoded(3000, 3000, ImageFormat::Jpeg), 1339).unwrap();
+    assert_eq!((cover.image.width, cover.image.height), (1339, 1339));
+}
+
+#[test]
+fn never_scales_covers_up() {
+    let cover = decode("u", &encoded(620, 620, ImageFormat::Png), 1339).unwrap();
+    assert_eq!((cover.image.width, cover.image.height), (620, 620));
 }
 
 #[test]
 fn rounds_the_corners() {
-    let cover = decode("u", &encoded(620, 620, ImageFormat::Png)).unwrap();
+    let cover = decode("u", &encoded(620, 620, ImageFormat::Png), 1024).unwrap();
     // Radius 15 px on a 620 px side.
     assert_eq!(pixel(&cover.image, 0, 0)[3], 0);
     assert_eq!(pixel(&cover.image, 619, 619)[3], 0);
@@ -72,9 +78,9 @@ fn rounds_the_corners() {
 
 #[test]
 fn rejects_what_it_cannot_decode() {
-    assert!(decode("u", b"not an image").is_err());
+    assert!(decode("u", b"not an image", 1024).is_err());
     let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>"#;
-    assert!(decode("u", svg).is_err());
+    assert!(decode("u", svg, 1024).is_err());
 }
 
 #[test]

@@ -90,8 +90,11 @@ pub fn run(art_host: &str, source: impl FnOnce(Updates) + Send + 'static) -> Res
     // SAFETY: SDL is initialised and this is the thread that initialised it.
     let kind = unsafe { events.register_event()? };
 
+    // The display's own size, for when nothing makes the window fullscreen,
+    // as without a window manager.
+    let mode = video.desktop_display_mode(0)?;
     let window = video
-        .window("Now Playing", 1920, 1080)
+        .window("Now Playing", mode.w as u32, mode.h as u32)
         .fullscreen_desktop()
         .build()
         .map_err(|e| e.to_string())?;
@@ -117,6 +120,7 @@ pub fn run(art_host: &str, source: impl FnOnce(Updates) + Send + 'static) -> Res
     let art = spawn_art(Fetcher::new(art_host), tx, waker());
 
     let creator = canvas.texture_creator();
+    let (_, height) = canvas.output_size()?;
     let mut screen = Screen {
         fonts: Fonts::load(),
         creator: &creator,
@@ -125,6 +129,7 @@ pub fn run(art_host: &str, source: impl FnOnce(Updates) + Send + 'static) -> Res
         since: Instant::now(),
         art,
         requested: None,
+        cover_side: cover_side(height),
         failed: None,
         cover: None,
         cover_id: 0,
@@ -136,15 +141,15 @@ pub fn run(art_host: &str, source: impl FnOnce(Updates) + Send + 'static) -> Res
 
 /// Starts the art thread. It blocks until it is sent a URL, then fetches
 /// and decodes that cover and hands it to the window.
-fn spawn_art(fetcher: Fetcher, tx: Sender<Message>, waker: Waker) -> Sender<String> {
-    let (requests, rx) = mpsc::channel::<String>();
+fn spawn_art(fetcher: Fetcher, tx: Sender<Message>, waker: Waker) -> Sender<(String, u32)> {
+    let (requests, rx) = mpsc::channel::<(String, u32)>();
     thread::spawn(move || {
-        while let Ok(url) = rx.recv() {
+        while let Ok((url, side)) = rx.recv() {
             // If more were asked for meanwhile, only the newest matters.
-            let url = rx.try_iter().last().unwrap_or(url);
+            let (url, side) = rx.try_iter().last().unwrap_or((url, side));
             let cover = fetcher
                 .fetch(&url)
-                .and_then(|bytes| art::decode(&url, &bytes));
+                .and_then(|bytes| art::decode(&url, &bytes, side));
             if tx.send(Message::Cover(url, cover)).is_err() {
                 return;
             }
@@ -220,6 +225,7 @@ fn event_loop(
                 WindowEvent::Exposed => dirty = true,
                 WindowEvent::SizeChanged(..) => {
                     screen.cancel_fade();
+                    screen.resize(canvas.output_size()?.1);
                     dirty = true;
                 }
                 _ => {}
@@ -242,10 +248,12 @@ struct Screen<'t> {
     state: State,
     /// When `state` arrived, to advance the progress bar from its position.
     since: Instant,
-    /// Asks the art thread for a cover.
-    art: Sender<String>,
+    /// Asks the art thread for a cover, at a side in pixels.
+    art: Sender<(String, u32)>,
     /// The newest cover URL asked for.
     requested: Option<String>,
+    /// The side covers are asked for at: the side they're shown at.
+    cover_side: u32,
     /// A cover URL that couldn't be fetched or decoded.
     failed: Option<String>,
     /// The newest cover that loaded. Kept, and shown, while the next loads.
@@ -315,7 +323,20 @@ impl<'t> Screen<'t> {
             && self.requested.as_ref() != Some(&url)
         {
             self.requested = Some(url.clone());
-            let _ = self.art.send(url);
+            let _ = self.art.send((url, self.cover_side));
+        }
+    }
+
+    /// The screen is now `height` pixels high. If covers are shown at a new
+    /// size, asks for the newest one again at that size.
+    fn resize(&mut self, height: u32) {
+        let side = cover_side(height);
+        if side == self.cover_side {
+            return;
+        }
+        self.cover_side = side;
+        if let Some(url) = &self.requested {
+            let _ = self.art.send((url.clone(), side));
         }
     }
 
@@ -585,4 +606,9 @@ fn sdl_rect(r: Rect) -> SdlRect {
         r.w.round().max(1.0) as u32,
         r.h.round().max(1.0) as u32,
     )
+}
+
+/// The side, in pixels, of the cover on a screen `height` pixels high.
+fn cover_side(height: u32) -> u32 {
+    (layout::cover_side(height as f32).ceil() as u32).max(1)
 }

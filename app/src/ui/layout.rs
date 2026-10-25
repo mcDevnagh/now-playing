@@ -64,6 +64,11 @@ pub struct Layout {
     pub bar: Option<Rect>,
 }
 
+/// The side of the cover on a screen `height` pixels high: 62vh.
+pub fn cover_side(height: f32) -> f32 {
+    62.0 * height / 100.0
+}
+
 /// With a cover: the cover at 62vh on the left, the text block to its
 /// right. Without (the track has no art, or it failed to load): the text
 /// block centred, each line centred. The text block is vertically centred
@@ -75,7 +80,7 @@ pub fn layout(
     (width, height): (f32, f32),
 ) -> Layout {
     let (vw, vh) = (width / 100.0, height / 100.0);
-    let cover_side = 62.0 * vh;
+    let cover_side = cover_side(height);
     let gap = 5.0 * vw;
     let text_width = if with_cover {
         (48.0 * vw).min(width - 12.0 * vw - cover_side - gap)
