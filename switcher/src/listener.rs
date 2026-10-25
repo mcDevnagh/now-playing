@@ -3,6 +3,7 @@
 
 pub mod kodi;
 pub mod snapcast;
+pub mod uxplay;
 
 use std::sync::mpsc::Sender;
 
@@ -38,6 +39,12 @@ pub fn from_config(config: &Config) -> Result<Vec<Box<dyn Listener>>, String> {
     if let Some(table) = &config.kodi {
         listeners.push(Box::new(kodi::Kodi {
             address: table.address.clone(),
+            app: table.app,
+        }));
+    }
+    if let Some(table) = &config.uxplay {
+        listeners.push(Box::new(uxplay::Uxplay {
+            window_class: table.window_class.clone(),
             app: table.app,
         }));
     }
