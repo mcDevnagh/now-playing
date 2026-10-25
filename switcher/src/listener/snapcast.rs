@@ -6,6 +6,7 @@ use now_playing_core::snapcast::{self, Stream};
 use now_playing_core::state::{State, now_playing};
 
 use super::Listener;
+use crate::action::Request;
 use crate::app::App;
 
 /// Follows `client` on the snapserver at `server`, asking for `app` whenever
@@ -17,7 +18,7 @@ pub struct Snapcast {
 }
 
 impl Listener for Snapcast {
-    fn run(&mut self, show: Sender<App>) -> ! {
+    fn run(&mut self, show: Sender<Request>) -> ! {
         let client = &self.client;
         eprintln!("snapcast: following client {client} on {}", self.server);
         let mut edges = SnapcastEdges::default();
@@ -25,7 +26,7 @@ impl Listener for Snapcast {
             if edges.update(playing(stream)) {
                 eprintln!("snapcast: client {client} started playing");
                 // The dispatch loop outlives the listeners.
-                let _ = show.send(self.app);
+                let _ = show.send(Request::Show(self.app));
             }
         })
     }

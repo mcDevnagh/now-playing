@@ -39,6 +39,20 @@ pub fn launch(launch_id: u64) -> Result<(), String> {
     .map_err(|e| format!("Steam's UI at {DEBUGGER}: {e}"))
 }
 
+/// Shows Steam's library home in front of the app in front, which keeps
+/// running behind it.
+pub fn home() -> Result<(), String> {
+    evaluate(DEBUGGER, HOME).map_err(|e| format!("Steam's UI at {DEBUGGER}: {e}"))
+}
+
+const HOME: &str = r#"SteamUIStore.Navigate("/library/home")"#;
+
+/// Whether Steam's UI is up: its page is open, and has set up the store the
+/// other calls use.
+pub fn is_up() -> Result<(), String> {
+    evaluate(DEBUGGER, "SteamUIStore").map_err(|e| format!("Steam's UI at {DEBUGGER}: {e}"))
+}
+
 /// Evaluates `expression` in Steam's UI, failing if it throws.
 fn evaluate(address: &str, expression: &str) -> Result<(), String> {
     let path = page_path(&get(address, "/json")?)?;

@@ -79,3 +79,59 @@ fn focus_outcomes() {
         assert_eq!(focus_outcome(APP.gamescope, front), outcome);
     }
 }
+
+#[test]
+fn at_start_outside_gaming_mode_does_nothing() {
+    assert_eq!(
+        decide_start(APP, None, not_asked),
+        Ok(StartDecision::NotGamingMode)
+    );
+}
+
+/// A switcher restart mustn't launch it again, or pull it to the front.
+#[test]
+fn at_start_running_is_left_alone() {
+    for front in [APP.gamescope, OTHER] {
+        assert_eq!(
+            decide_start(APP, Some(front), running(true)),
+            Ok(StartDecision::AlreadyRunning)
+        );
+    }
+}
+
+#[test]
+fn at_start_not_running_is_launched() {
+    assert_eq!(
+        decide_start(APP, Some(OTHER), running(false)),
+        Ok(StartDecision::Launch(APP.launch.unwrap()))
+    );
+    assert_eq!(
+        decide_start(NO_LAUNCH, Some(OTHER), running(false)),
+        Ok(StartDecision::CantLaunch)
+    );
+}
+
+#[test]
+fn at_start_failed_running_check_is_an_error() {
+    let result = decide_start(APP, Some(OTHER), || Err("gone".to_owned()));
+    assert_eq!(result, Err("gone".to_owned()));
+}
+
+#[test]
+fn home_outcomes() {
+    let cases = [
+        (Ok(Some(OTHER)), "then went home"),
+        (
+            Ok(Some(APP.gamescope)),
+            "but it's still in front after going home",
+        ),
+        (Ok(None), "but left Gaming Mode"),
+        (
+            Err("display :0: gone".to_owned()),
+            "then went home, but can't check it worked (display :0: gone)",
+        ),
+    ];
+    for (front, outcome) in cases {
+        assert_eq!(home_outcome(APP.gamescope, front), outcome);
+    }
+}

@@ -23,6 +23,8 @@ pub struct Kodi {
     pub app: App,
     /// Kodi's JSON-RPC TCP address.
     pub address: String,
+    /// Launch the app once Steam's UI is up.
+    pub launch_at_start: bool,
 }
 
 /// Our Snapcast client starting to play → show an app.
@@ -34,6 +36,8 @@ pub struct Snapcast {
     pub server: String,
     /// The client to follow [default: this machine's hostname].
     pub client: Option<String>,
+    /// Launch the app once Steam's UI is up.
+    pub launch_at_start: bool,
 }
 
 /// A `[kodi]` table as written, checked on the way to [`Kodi`].
@@ -43,6 +47,8 @@ struct RawKodi {
     app: Option<u32>,
     launch: Option<u64>,
     address: Option<String>,
+    #[serde(default)]
+    launch_at_start: bool,
 }
 
 /// A `[snapcast]` table as written, checked on the way to [`Snapcast`].
@@ -53,17 +59,21 @@ struct RawSnapcast {
     launch: Option<u64>,
     server: String,
     client: Option<String>,
+    #[serde(default)]
+    launch_at_start: bool,
 }
 
 impl TryFrom<RawKodi> for Kodi {
     type Error = String;
 
     fn try_from(raw: RawKodi) -> Result<Self, String> {
+        let app = App::new(raw.app, raw.launch).map_err(|e| format!("[kodi] {e}"))?;
         Ok(Self {
-            app: App::new(raw.app, raw.launch).map_err(|e| format!("[kodi] {e}"))?,
+            app,
             address: raw
                 .address
                 .unwrap_or_else(|| DEFAULT_KODI_ADDRESS.to_owned()),
+            launch_at_start: launch_at_start("kodi", app, raw.launch_at_start)?,
         })
     }
 }
@@ -75,12 +85,22 @@ impl TryFrom<RawSnapcast> for Snapcast {
         if raw.server.is_empty() {
             return Err("[snapcast] `server` is empty".to_owned());
         }
+        let app = App::new(raw.app, raw.launch).map_err(|e| format!("[snapcast] {e}"))?;
         Ok(Self {
-            app: App::new(raw.app, raw.launch).map_err(|e| format!("[snapcast] {e}"))?,
+            app,
             server: raw.server,
             client: raw.client,
+            launch_at_start: launch_at_start("snapcast", app, raw.launch_at_start)?,
         })
     }
+}
+
+/// A table's `launch_at_start`, checked: launching needs a launch ID.
+fn launch_at_start(table: &str, app: App, launch_at_start: bool) -> Result<bool, String> {
+    if launch_at_start && app.launch.is_none() {
+        return Err(format!("[{table}] `launch_at_start` needs `launch`"));
+    }
+    Ok(launch_at_start)
 }
 
 impl Config {
@@ -97,6 +117,17 @@ impl Config {
             return Err("needs a [kodi] or [snapcast] table".to_owned());
         }
         Ok(config)
+    }
+
+    /// The apps to launch once Steam's UI is up: those whose tables set
+    /// `launch_at_start`.
+    pub fn launch_at_start(&self) -> Vec<App> {
+        let kodi = self.kodi.as_ref().map(|t| (t.app, t.launch_at_start));
+        let snapcast = self.snapcast.as_ref().map(|t| (t.app, t.launch_at_start));
+        kodi.into_iter()
+            .chain(snapcast)
+            .filter_map(|(app, at_start)| at_start.then_some(app))
+            .collect()
     }
 }
 
