@@ -12,6 +12,11 @@ const FULL: &str = r#"
     client = "TV"
     launch_at_start = true
     launch_at_start_wait = 5
+
+    [uxplay]
+    launch = 12918456320
+    window_class = "Mirror"
+    launch_at_start = true
 "#;
 
 #[test]
@@ -37,6 +42,14 @@ fn full() {
                 client: Some("TV".to_owned()),
                 launch_at_start: Some(Duration::from_secs(5)),
             }),
+            uxplay: Some(Uxplay {
+                app: App {
+                    gamescope: 3,
+                    launch: Some(12918456320),
+                },
+                window_class: "Mirror".to_owned(),
+                launch_at_start: Some(Duration::from_secs(DEFAULT_LAUNCH_AT_START_WAIT)),
+            }),
         }
     );
 }
@@ -45,13 +58,22 @@ fn full() {
 fn launch_at_start() {
     assert_eq!(
         Config::parse(FULL).unwrap().launch_at_start(),
-        [(
-            App {
-                gamescope: 2457742405,
-                launch: Some(10555923251500941312),
-            },
-            Duration::from_secs(5)
-        )]
+        [
+            (
+                App {
+                    gamescope: 2457742405,
+                    launch: Some(10555923251500941312),
+                },
+                Duration::from_secs(5)
+            ),
+            (
+                App {
+                    gamescope: 3,
+                    launch: Some(12918456320),
+                },
+                Duration::from_secs(DEFAULT_LAUNCH_AT_START_WAIT)
+            ),
+        ]
     );
     let kodi = "[kodi]\nlaunch = 10375237194288726016\nlaunch_at_start = true";
     let config = Config::parse(kodi).unwrap();
@@ -79,6 +101,18 @@ fn kodi_can_have_a_launch_id() {
 }
 
 #[test]
+fn minimal_uxplay_takes_the_default_window_class() {
+    for (ids, gamescope) in [("app = 3", 3), ("launch = 12918456320", 3)] {
+        let config = Config::parse(&format!("[uxplay]\n{ids}")).unwrap();
+        let uxplay = config.uxplay.unwrap();
+        assert_eq!(uxplay.app.gamescope, gamescope);
+        assert_eq!(uxplay.window_class, DEFAULT_UXPLAY_WINDOW_CLASS);
+        assert_eq!(uxplay.launch_at_start, None);
+        assert_eq!((config.kodi, config.snapcast), (None, None));
+    }
+}
+
+#[test]
 fn minimal_kodi_takes_the_default_address() {
     let config = Config::parse("[kodi]\napp = 1").unwrap();
     assert_eq!(config.kodi.unwrap().address, DEFAULT_KODI_ADDRESS);
@@ -99,7 +133,7 @@ fn minimal_snapcast() {
 #[test]
 fn errors() {
     let cases = [
-        ("", "[kodi] or [snapcast]"),
+        ("", "[kodi], [snapcast] or [uxplay]"),
         ("[kodi]", "[kodi] needs `app`, `launch`"),
         (
             "[kodi]\napp = 1\nlaunch = 10375237194288726016",
@@ -123,6 +157,16 @@ fn errors() {
             "[snapcast] `launch_at_start` needs `launch`",
         ),
         ("[kodi]\napp = 1\nlaunch_at_start = 1", "launch_at_start"),
+        ("[uxplay]", "[uxplay] needs `app`, `launch`"),
+        (
+            "[uxplay]\napp = 3\nwindow_class = \"\"",
+            "[uxplay] `window_class` is empty",
+        ),
+        (
+            "[uxplay]\napp = 3\nlaunch_at_start = true",
+            "[uxplay] `launch_at_start` needs `launch`",
+        ),
+        ("[uxplay]\napp = 3\nfile = \"~/.uxplay.dacp\"", "file"),
         (
             "[kodi]\nlaunch = 10375237194288726016\nlaunch_at_start_wait = 5",
             "[kodi] `launch_at_start_wait` needs `launch_at_start = true`",
