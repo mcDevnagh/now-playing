@@ -30,6 +30,7 @@ fn full() {
                     gamescope: 1,
                     launch: None,
                 },
+                switch: true,
                 address: "kodi:9090".to_owned(),
                 launch_at_start: None,
             }),
@@ -38,6 +39,7 @@ fn full() {
                     gamescope: 2457742405,
                     launch: Some(10555923251500941312),
                 },
+                switch: true,
                 server: "snapserver:1705".to_owned(),
                 client: Some("TV".to_owned()),
                 launch_at_start: Some(Duration::from_secs(5)),
@@ -47,6 +49,7 @@ fn full() {
                     gamescope: 3,
                     launch: Some(12918456320),
                 },
+                switch: false,
                 window_class: "Mirror".to_owned(),
                 launch_at_start: Some(Duration::from_secs(DEFAULT_LAUNCH_AT_START_WAIT)),
             }),
@@ -87,7 +90,7 @@ fn launch_at_start() {
 
 #[test]
 fn kodi_can_have_a_launch_id() {
-    let kodi = Config::parse("[kodi]\nlaunch = 10375237194288726016")
+    let kodi = Config::parse("[kodi]\napp = 2415673154\nlaunch = 10375237194288726016")
         .unwrap()
         .kodi
         .unwrap();
@@ -102,13 +105,27 @@ fn kodi_can_have_a_launch_id() {
 
 #[test]
 fn minimal_uxplay_takes_the_default_window_class() {
-    for (ids, gamescope) in [("app = 3", 3), ("launch = 12918456320", 3)] {
-        let config = Config::parse(&format!("[uxplay]\n{ids}")).unwrap();
-        let uxplay = config.uxplay.unwrap();
-        assert_eq!(uxplay.app.gamescope, gamescope);
-        assert_eq!(uxplay.window_class, DEFAULT_UXPLAY_WINDOW_CLASS);
-        assert_eq!(uxplay.launch_at_start, None);
-        assert_eq!((config.kodi, config.snapcast), (None, None));
+    let config = Config::parse("[uxplay]\napp = 3").unwrap();
+    let uxplay = config.uxplay.unwrap();
+    assert_eq!(uxplay.app.gamescope, 3);
+    assert_eq!(uxplay.window_class, DEFAULT_UXPLAY_WINDOW_CLASS);
+    assert_eq!(uxplay.launch_at_start, None);
+    assert_eq!((config.kodi, config.snapcast), (None, None));
+}
+
+#[test]
+fn without_app_a_table_only_launches_at_start() {
+    let config = Config::parse("[uxplay]\nlaunch = 12918456320\nlaunch_at_start = true").unwrap();
+    let uxplay = config.uxplay.as_ref().unwrap();
+    assert_eq!(uxplay.app.gamescope, 3);
+    assert!(!uxplay.switch);
+    assert_eq!(config.launch_at_start().len(), 1);
+    for ids in ["app = 3", "app = 3\nlaunch = 12918456320"] {
+        let uxplay = Config::parse(&format!("[uxplay]\n{ids}"))
+            .unwrap()
+            .uxplay
+            .unwrap();
+        assert!(uxplay.switch, "{ids}");
     }
 }
 
@@ -121,12 +138,12 @@ fn minimal_kodi_takes_the_default_address() {
 
 #[test]
 fn minimal_snapcast() {
-    for (ids, gamescope) in [("app = 2", 2), ("launch = 8589934592", 2)] {
-        let text = format!("[snapcast]\n{ids}\nserver = \"s:1705\"");
-        let snapcast = Config::parse(&text).unwrap().snapcast.unwrap();
-        assert_eq!(snapcast.app.gamescope, gamescope);
-        assert_eq!(snapcast.client, None);
-    }
+    let snapcast = Config::parse("[snapcast]\napp = 2\nserver = \"s:1705\"")
+        .unwrap()
+        .snapcast
+        .unwrap();
+    assert_eq!(snapcast.app.gamescope, 2);
+    assert_eq!(snapcast.client, None);
 }
 
 /// Each case and a word its error must contain.
@@ -175,6 +192,11 @@ fn errors() {
             "[kodi]\nlaunch = 10375237194288726016\nlaunch_at_start = true\nlaunch_at_start_wait = -1",
             "launch_at_start_wait",
         ),
+        (
+            "[kodi]\nlaunch = 10375237194288726016",
+            "[kodi] does nothing",
+        ),
+        ("[uxplay]\nlaunch = 12918456320", "[uxplay] does nothing"),
         ("[kodi]\napp = 1\n[spotify]", "spotify"),
         ("app = 1", "app"),
         ("[kodi\napp = 1", "kodi"),

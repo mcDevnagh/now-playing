@@ -2,9 +2,10 @@
 # ~/.config/now-playing/switcher.toml and fill in your own values.
 #
 # Each table names one app, by its gamescope ID (`app`), its launch ID
-# (`launch`) or both. With only `launch`, the gamescope ID is worked out from
-# it. Without `launch`, the app can be brought to the front but not started.
-# Leave a table out to not follow that player.
+# (`launch`) or both. The switcher only brings the app to the front if the
+# table gives `app`: with only `launch`, the app can be launched at start (see
+# below) but is never switched to. Without `launch`, the app can be brought to
+# the front but not started. Leave a table out to not follow that player.
 #
 # Any table can also set `launch_at_start = true`, which needs `launch`: each
 # time Gaming Mode starts, once Steam's UI is up, the switcher launches the
@@ -26,6 +27,7 @@ address = "127.0.0.1:9090"
 # Music starts on this machine's Snapcast client → bring Now Playing to the
 # front, launching it if it isn't running.
 [snapcast]
+app = 2345678901
 launch = 10074614166745776128
 # snapserver's JSON-RPC address. Required.
 server = "snapserver:1705"
@@ -38,6 +40,7 @@ server = "snapserver:1705"
 # it: set `launch_at_start` to have it running. Audio-only AirPlay opens no
 # window, so it doesn't switch.
 [uxplay]
+app = 3456789012
 launch = 14846795755745705984
 launch_at_start = true
 # The WM_CLASS class of UxPlay's video window, which it opens while a device

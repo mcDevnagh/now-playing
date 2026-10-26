@@ -20,10 +20,10 @@ pub trait Listener: Send {
     fn run(&mut self, show: Sender<Request>) -> !;
 }
 
-/// The listeners `config` asks for.
+/// The listeners `config` asks for: one per table that gives `app`.
 pub fn from_config(config: &Config) -> Result<Vec<Box<dyn Listener>>, String> {
     let mut listeners: Vec<Box<dyn Listener>> = Vec::new();
-    if let Some(table) = &config.snapcast {
+    if let Some(table) = config.snapcast.as_ref().filter(|t| t.switch) {
         let client = match &table.client {
             Some(client) => client.clone(),
             None => {
@@ -36,13 +36,13 @@ pub fn from_config(config: &Config) -> Result<Vec<Box<dyn Listener>>, String> {
             app: table.app,
         }));
     }
-    if let Some(table) = &config.kodi {
+    if let Some(table) = config.kodi.as_ref().filter(|t| t.switch) {
         listeners.push(Box::new(kodi::Kodi {
             address: table.address.clone(),
             app: table.app,
         }));
     }
-    if let Some(table) = &config.uxplay {
+    if let Some(table) = config.uxplay.as_ref().filter(|t| t.switch) {
         listeners.push(Box::new(uxplay::Uxplay {
             window_class: table.window_class.clone(),
             app: table.app,

@@ -137,8 +137,9 @@ choice back.)
    it off. Kodi's web server also uses port 8080, but on IPv6, so the two
    don't clash.
 4. **Config:** copy `switcher/switcher.example.toml` to
-   `~/.config/now-playing/switcher.toml` and fill it in. To find an app's
-   gamescope ID, bring it to the front and run:
+   `~/.config/now-playing/switcher.toml` and fill it in. The switcher only
+   brings an app to the front if its table gives `app`, its gamescope ID.
+   To find it, bring the app to the front and run:
 
    ```
    DISPLAY=:0 xprop -root GAMESCOPE_FOCUSED_APP
@@ -188,8 +189,8 @@ uxplay "$@"
 2. In Desktop Mode, add it to Steam as a non-Steam game, with UxPlay's own
    options, such as `-n` for its name, in its launch options.
 3. Launch it from Gaming Mode to find its gamescope ID, as in step 4 above,
-   and give the switcher an `[uxplay]` table with its launch ID and
-   `launch_at_start = true`, so it's running to accept a connection.
+   and give the switcher an `[uxplay]` table with it as `app`, its launch
+   ID and `launch_at_start = true`, so it's running to accept a connection.
 
 While a device mirrors, UxPlay's video window covers the placeholder; when
 it stops, the placeholder shows again. The switcher finds UxPlay's display

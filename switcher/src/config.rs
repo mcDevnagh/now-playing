@@ -27,6 +27,9 @@ pub struct Config {
 #[serde(try_from = "RawKodi")]
 pub struct Kodi {
     pub app: App,
+    /// Bring the app to the front when the player starts: only if the table
+    /// gives `app`.
+    pub switch: bool,
     /// Kodi's JSON-RPC TCP address.
     pub address: String,
     /// Launch the app each time Gaming Mode starts, then go home once it's in
@@ -39,6 +42,9 @@ pub struct Kodi {
 #[serde(try_from = "RawSnapcast")]
 pub struct Snapcast {
     pub app: App,
+    /// Bring the app to the front when the player starts: only if the table
+    /// gives `app`.
+    pub switch: bool,
     /// snapserver's JSON-RPC address.
     pub server: String,
     /// The client to follow [default: this machine's hostname].
@@ -54,6 +60,9 @@ pub struct Snapcast {
 #[serde(try_from = "RawUxplay")]
 pub struct Uxplay {
     pub app: App,
+    /// Bring the app to the front when the player starts: only if the table
+    /// gives `app`.
+    pub switch: bool,
     /// The `WM_CLASS` class of UxPlay's video window.
     pub window_class: String,
     /// Launch the app each time Gaming Mode starts, then go home once it's in
@@ -103,17 +112,16 @@ impl TryFrom<RawKodi> for Kodi {
 
     fn try_from(raw: RawKodi) -> Result<Self, String> {
         let app = App::new(raw.app, raw.launch).map_err(|e| format!("[kodi] {e}"))?;
+        let launch_at_start =
+            launch_at_start("kodi", app, raw.launch_at_start, raw.launch_at_start_wait)?;
+        let switch = switch_or_launch("kodi", raw.app, launch_at_start)?;
         Ok(Self {
             app,
+            switch,
             address: raw
                 .address
                 .unwrap_or_else(|| DEFAULT_KODI_ADDRESS.to_owned()),
-            launch_at_start: launch_at_start(
-                "kodi",
-                app,
-                raw.launch_at_start,
-                raw.launch_at_start_wait,
-            )?,
+            launch_at_start,
         })
     }
 }
@@ -126,16 +134,19 @@ impl TryFrom<RawSnapcast> for Snapcast {
             return Err("[snapcast] `server` is empty".to_owned());
         }
         let app = App::new(raw.app, raw.launch).map_err(|e| format!("[snapcast] {e}"))?;
+        let launch_at_start = launch_at_start(
+            "snapcast",
+            app,
+            raw.launch_at_start,
+            raw.launch_at_start_wait,
+        )?;
+        let switch = switch_or_launch("snapcast", raw.app, launch_at_start)?;
         Ok(Self {
             app,
+            switch,
             server: raw.server,
             client: raw.client,
-            launch_at_start: launch_at_start(
-                "snapcast",
-                app,
-                raw.launch_at_start,
-                raw.launch_at_start_wait,
-            )?,
+            launch_at_start,
         })
     }
 }
@@ -148,19 +159,33 @@ impl TryFrom<RawUxplay> for Uxplay {
             return Err("[uxplay] `window_class` is empty".to_owned());
         }
         let app = App::new(raw.app, raw.launch).map_err(|e| format!("[uxplay] {e}"))?;
+        let launch_at_start =
+            launch_at_start("uxplay", app, raw.launch_at_start, raw.launch_at_start_wait)?;
+        let switch = switch_or_launch("uxplay", raw.app, launch_at_start)?;
         Ok(Self {
             app,
+            switch,
             window_class: raw
                 .window_class
                 .unwrap_or_else(|| DEFAULT_UXPLAY_WINDOW_CLASS.to_owned()),
-            launch_at_start: launch_at_start(
-                "uxplay",
-                app,
-                raw.launch_at_start,
-                raw.launch_at_start_wait,
-            )?,
+            launch_at_start,
         })
     }
+}
+
+/// Whether a table switches to its app: only if it gives `app`. A table
+/// that neither switches nor launches at start would do nothing.
+fn switch_or_launch(
+    table: &str,
+    app: Option<u32>,
+    launch_at_start: Option<Duration>,
+) -> Result<bool, String> {
+    if app.is_none() && launch_at_start.is_none() {
+        return Err(format!(
+            "[{table}] does nothing: needs `app` to switch to it, or `launch_at_start`"
+        ));
+    }
+    Ok(app.is_some())
 }
 
 /// A table's `launch_at_start` and `launch_at_start_wait`, checked:
