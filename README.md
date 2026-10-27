@@ -57,6 +57,8 @@ Debug builds add two options that release builds leave out:
 - `--print` prints state changes instead of opening the window.
 - `--fake LOG` replays a captured log from `core/tests/fixtures/` instead
   of connecting, with its original timing.
+- Keys the window doesn't handle are logged to stderr with their SDL
+  keycode and scancode, to find what a remote's buttons send.
 
 ## Building
 

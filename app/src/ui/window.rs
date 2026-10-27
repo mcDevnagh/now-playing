@@ -13,6 +13,8 @@ use std::time::{Duration, Instant};
 
 use sdl2::event::{Event, EventSender, WindowEvent};
 use sdl2::keyboard::Keycode;
+#[cfg(debug_assertions)]
+use sdl2::keyboard::Scancode;
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::rect::Rect as SdlRect;
 use sdl2::render::{BlendMode, Texture, TextureCreator, WindowCanvas};
@@ -235,9 +237,27 @@ fn event_loop(
                 screen.cancel_fade();
                 dirty = true;
             }
+            // Debug builds log the keys nothing handles, to find what a
+            // remote's buttons send before mapping them.
+            #[cfg(debug_assertions)]
+            Event::KeyDown {
+                keycode,
+                scancode,
+                repeat: false,
+                ..
+            } => log_key(keycode, scancode),
             _ => {}
         }
     }
+}
+
+/// One line per key, e.g. `key: keycode Escape (0x1b), scancode Escape (41)`.
+/// SDL names a key it doesn't know with an empty string.
+#[cfg(debug_assertions)]
+fn log_key(keycode: Option<Keycode>, scancode: Option<Scancode>) {
+    let keycode = keycode.map_or("none".to_owned(), |k| format!("{k} ({:#x})", k.into_i32()));
+    let scancode = scancode.map_or("none".to_owned(), |s| format!("{s} ({})", s as i32));
+    eprintln!("now-playing: key: keycode {keycode}, scancode {scancode}");
 }
 
 /// What's on screen, and the textures that draw it.
