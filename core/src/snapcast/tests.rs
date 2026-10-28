@@ -1,3 +1,8 @@
+use std::io;
+
+use serde_json::Value;
+
+use super::connection::{Follow, Input};
 use super::control::control_request;
 use super::*;
 use crate::fixtures::{
@@ -325,4 +330,208 @@ fn sources_without_control_cannot() {
             !(p.can_control || p.can_play || p.can_pause || p.can_go_next || p.can_go_previous)
         );
     }
+}
+
+/// The opening status of `GO_LIBRESPOT_LOG`, the HTPC following
+/// `Meta-HTPC`, after `edit`.
+fn status_with(edit: impl FnOnce(&mut Value)) -> String {
+    let mut msg: Value = serde_json::from_str(lines(GO_LIBRESPOT_LOG).next().unwrap()).unwrap();
+    edit(&mut msg["result"]["server"]);
+    msg.to_string()
+}
+
+/// `Meta-HTPC`'s properties in a server.
+fn meta_properties(server: &mut Value) -> &mut Value {
+    let streams = server["streams"].as_array_mut().unwrap();
+    let stream = streams.iter_mut().find(|s| s["id"] == "Meta-HTPC").unwrap();
+    &mut stream["properties"]
+}
+
+fn session_with(edit: impl FnOnce(&mut Value)) -> Session {
+    let mut session = Session::new("HTPC");
+    session.handle(&status_with(edit)).unwrap();
+    session
+}
+
+const COMMANDS: [Command; 3] = [Command::PlayPause, Command::Next, Command::Previous];
+
+/// What `control` does with `command`, and the line it wrote.
+fn send(session: &Session, command: Command) -> (Result<(), Refused>, String) {
+    let mut out = Vec::new();
+    let result = control(session, command, 1, &mut out).unwrap();
+    (result, String::from_utf8(out).unwrap())
+}
+
+#[test]
+fn commands_without_stream_are_refused() {
+    let no_status = Session::new("HTPC");
+    let missing_client = session_with(|server| {
+        server["groups"][1]["clients"][0]["connected"] = false.into();
+    });
+    for session in [no_status, missing_client] {
+        for command in COMMANDS {
+            assert_eq!(send(&session, command), (Err(Refused::NoStream), "".into()));
+        }
+    }
+}
+
+#[test]
+fn commands_need_their_flags() {
+    let refused = |flag| {
+        Err(Refused::NotAllowed {
+            stream: "Meta-HTPC".into(),
+            flag,
+        })
+    };
+    let session = session_with(|server| meta_properties(server)["canControl"] = false.into());
+    for command in COMMANDS {
+        assert_eq!(send(&session, command).0, refused("canControl"));
+    }
+
+    for (command, flag) in [
+        (Command::Next, "canGoNext"),
+        (Command::Previous, "canGoPrevious"),
+    ] {
+        let session = session_with(|server| meta_properties(server)[flag] = false.into());
+        assert_eq!(send(&session, command), (refused(flag), "".into()));
+        // Only that command.
+        for other in COMMANDS.into_iter().filter(|&c| c != command) {
+            assert_eq!(send(&session, other).0, Ok(()));
+        }
+    }
+
+    // Play/pause needs either flag, whether playing or paused.
+    for status in ["playing", "paused"] {
+        for (play, pause) in [(true, false), (false, true), (false, false)] {
+            let session = session_with(|server| {
+                let p = meta_properties(server);
+                p["playbackStatus"] = status.into();
+                p["canPlay"] = play.into();
+                p["canPause"] = pause.into();
+            });
+            let expected = match play || pause {
+                true => Ok(()),
+                false => refused("canPlay or canPause"),
+            };
+            assert_eq!(send(&session, Command::PlayPause).0, expected);
+        }
+    }
+}
+
+#[test]
+fn commands_go_to_current_stream() {
+    let mut session = session_with(|_| {});
+    let (result, line) = send(&session, Command::Next);
+    assert_eq!(result, Ok(()));
+    assert_eq!(line, control_request(1, "Meta-HTPC", Command::Next) + "\n");
+
+    // The HTPC's group moves to the go-librespot stream.
+    session
+        .handle(&status_with(|server| {
+            server["groups"][1]["stream_id"] = "Spotify-HTPC".into();
+        }))
+        .unwrap();
+    let (_, line) = send(&session, Command::Next);
+    assert_eq!(
+        line,
+        control_request(1, "Spotify-HTPC", Command::Next) + "\n"
+    );
+}
+
+fn line(connection: u64, line: &str) -> Input {
+    let line = line.to_owned();
+    Input::Line { connection, line }
+}
+
+/// Feeds `inputs` to connection number 2, after its first
+/// `Server.GetStatus`, returning the id and method of each request written.
+fn follow(inputs: Vec<Input>) -> Vec<(u64, String)> {
+    let mut follow = Follow::new("HTPC", 2, Vec::new());
+    follow.get_status().unwrap();
+    for input in inputs {
+        follow.input(input, &mut |_, _| {}).unwrap();
+    }
+    let out = String::from_utf8(follow.into_out()).unwrap();
+    out.lines()
+        .map(|line| {
+            let msg: Value = serde_json::from_str(line).unwrap();
+            (
+                msg["id"].as_u64().unwrap(),
+                msg["method"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect()
+}
+
+fn requests(requests: &[(u64, &str)]) -> Vec<(u64, String)> {
+    requests
+        .iter()
+        .map(|&(id, method)| (id, method.to_owned()))
+        .collect()
+}
+
+#[test]
+fn commands_and_status_share_ids() {
+    let refetch =
+        r#"{"jsonrpc":"2.0","method":"Group.OnStreamChanged","params":{"id":"x","stream_id":"y"}}"#;
+    let got = follow(vec![
+        line(2, &status_with(|_| {})),
+        Input::Command(Command::PlayPause),
+        line(2, refetch),
+        Input::Command(Command::Next),
+    ]);
+    assert_eq!(
+        got,
+        requests(&[
+            (1, "Server.GetStatus"),
+            (2, "Stream.Control"),
+            (3, "Server.GetStatus"),
+            (4, "Stream.Control"),
+        ])
+    );
+}
+
+#[test]
+fn old_connections_are_ignored() {
+    let mut follow = Follow::new("HTPC", 2, Vec::new());
+    let mut changes = 0;
+    let mut changed = |_: &Session, _| changes += 1;
+    follow
+        .input(line(1, &status_with(|_| {})), &mut changed)
+        .unwrap();
+    let error = io::Error::new(io::ErrorKind::UnexpectedEof, "old");
+    let old_close = Input::Closed {
+        connection: 1,
+        error,
+    };
+    follow.input(old_close, &mut changed).unwrap();
+    follow
+        .input(Input::Command(Command::Next), &mut changed)
+        .unwrap();
+    assert_eq!(changes, 0);
+    assert!(follow.into_out().is_empty());
+
+    let mut follow = Follow::new("HTPC", 2, Vec::new());
+    let error = io::Error::new(io::ErrorKind::UnexpectedEof, "ours");
+    let close = Input::Closed {
+        connection: 2,
+        error,
+    };
+    assert!(follow.input(close, &mut |_, _| {}).is_err());
+}
+
+#[test]
+fn commands_from_an_outage_are_refused() {
+    // Pressed while disconnected: queued ahead of the new connection's
+    // first status reply.
+    let got = follow(vec![
+        Input::Command(Command::PlayPause),
+        Input::Command(Command::Next),
+        line(2, &status_with(|_| {})),
+        Input::Command(Command::Previous),
+    ]);
+    assert_eq!(
+        got,
+        requests(&[(1, "Server.GetStatus"), (4, "Stream.Control")])
+    );
 }
