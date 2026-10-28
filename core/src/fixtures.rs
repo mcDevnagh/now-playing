@@ -11,6 +11,15 @@ pub const META_LOG: &str = include_str!("../tests/fixtures/meta-librespot-events
 /// Captured live from the built-in librespot source.
 pub const BUILTIN_LOG: &str = include_str!("../tests/fixtures/builtin-events.log");
 pub const BUILTIN_STATUS: &str = include_str!("../tests/fixtures/builtin-status.json");
+/// Captured live, sending `Stream.Control` commands to a go-librespot
+/// stream, `Spotify-HTPC`, while the HTPC follows a meta stream over it.
+/// The last is for a stream that doesn't exist.
+pub const GO_LIBRESPOT_LOG: &str = include_str!("../tests/fixtures/go-librespot-events.log");
+/// Captured live, as `GO_LIBRESPOT_LOG`, but sending the commands to the
+/// meta stream, `Meta-HTPC`. A meta stream over go-librespot, unlike
+/// `META_LOG`, which was captured with `meta_librespot.py`.
+pub const META_GO_LIBRESPOT_LOG: &str =
+    include_str!("../tests/fixtures/meta-go-librespot-events.log");
 /// Hand-written: not seen live yet.
 pub const GROUP_SWITCH_LOG: &str = include_str!("../tests/fixtures/group-switch.log");
 /// Hand-written: not seen live yet.

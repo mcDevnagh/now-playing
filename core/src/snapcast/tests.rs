@@ -1,6 +1,7 @@
 use super::*;
 use crate::fixtures::{
-    GROUP_SWITCH_LOG, META_LOG, META_SWITCH_LOG, SPARSE_LOG, meta_status, replay, summary,
+    GO_LIBRESPOT_LOG, GROUP_SWITCH_LOG, META_GO_LIBRESPOT_LOG, META_LOG, META_SWITCH_LOG,
+    SPARSE_LOG, meta_status, replay, status, summary,
 };
 use crate::state::{State, Track};
 
@@ -42,6 +43,14 @@ fn follows_group_stream() {
     server.streams.push(other);
     server.groups[1].stream_id = "Meta-HTPC".into();
     assert_eq!(stream_id(&server, "HTPC"), Some("Meta-HTPC"));
+}
+
+#[test]
+fn go_librespot_captures_follow_meta_stream() {
+    for log in [GO_LIBRESPOT_LOG, META_GO_LIBRESPOT_LOG] {
+        let server = status(log.lines().next().unwrap().split_once('\t').unwrap().1);
+        assert_eq!(stream_id(&server, "HTPC"), Some("Meta-HTPC"));
+    }
 }
 
 type Summary<'a> = Option<(&'a str, bool, Option<f64>)>;
