@@ -23,7 +23,7 @@ use super::keys::command_for;
 use super::layout::{self, Layout, Rect};
 use super::text::Fonts;
 use crate::art::{self, Cover, Fetcher, Image};
-use crate::snapcast::Commands;
+use crate::snapcast::Controller;
 use crate::state::{State, Track};
 
 const TICK: Duration = Duration::from_secs(1);
@@ -81,11 +81,11 @@ impl Updates {
 
 /// Opens the window and runs until the user quits. `source` runs on its own
 /// thread and feeds states through the `Updates` it is given. The media keys
-/// go to `commands`. Covers whose host doesn't resolve are fetched from
+/// go to `controller`. Covers whose host doesn't resolve are fetched from
 /// `art_host` instead.
 pub fn run(
     art_host: &str,
-    commands: Commands,
+    controller: Controller,
     source: impl FnOnce(Updates) + Send + 'static,
 ) -> Result<(), String> {
     sdl3::hint::set("SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS", "0");
@@ -141,7 +141,7 @@ pub fn run(
         visible: false,
         fade: None,
     };
-    event_loop(&sdl, &mut canvas, &mut screen, &rx, kind, &commands)
+    event_loop(&sdl, &mut canvas, &mut screen, &rx, kind, &controller)
 }
 
 /// Starts the art thread. It blocks until it is sent a URL, then fetches
@@ -170,7 +170,7 @@ fn event_loop(
     screen: &mut Screen,
     rx: &Receiver<Message>,
     kind: u32,
-    commands: &Commands,
+    controller: &Controller,
 ) -> Result<(), String> {
     let mut pump = sdl.event_pump().map_err(|e| e.to_string())?;
     let mut focused = true;
@@ -245,7 +245,7 @@ fn event_loop(
                 keycode,
                 repeat: false,
                 ..
-            } if let Some(command) = command_for(keycode) => commands.send(command),
+            } if let Some(command) = command_for(keycode) => controller.send(command),
             // Debug builds log the keys nothing handles, to find what a
             // remote's buttons send before mapping them.
             #[cfg(debug_assertions)]

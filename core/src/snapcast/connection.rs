@@ -2,7 +2,7 @@
 //!
 //! One thread owns the connection: its session, and the socket's writer.
 //! Everything it reacts to arrives on one channel: lines from a reader
-//! thread, and commands from whoever holds [`Commands`].
+//! thread, and commands from whoever holds [`Controller`].
 
 use std::io::{self, BufRead, BufReader, Write};
 use std::net::{Shutdown, TcpStream};
@@ -31,9 +31,9 @@ pub(super) enum Input {
 
 /// Sends playback commands to the connection, for the stream it follows.
 #[derive(Clone)]
-pub struct Commands(Sender<Input>);
+pub struct Controller(Sender<Input>);
 
-impl Commands {
+impl Controller {
     /// Hands `command` to the connection. Never blocks; does nothing once
     /// the connection has gone.
     pub fn send(&self, command: Command) {
@@ -47,7 +47,7 @@ impl Commands {
 pub struct Inbox {
     rx: Receiver<Input>,
     /// For reader threads. Holding it also keeps `rx` open with no
-    /// `Commands` left.
+    /// `Controller` left.
     tx: Sender<Input>,
 }
 
@@ -67,9 +67,9 @@ impl Inbox {
 }
 
 /// A channel for playback commands into a connection.
-pub fn channel() -> (Commands, Inbox) {
+pub fn channel() -> (Controller, Inbox) {
     let (tx, rx) = mpsc::channel();
-    (Commands(tx.clone()), Inbox { rx, tx })
+    (Controller(tx.clone()), Inbox { rx, tx })
 }
 
 /// Follows `client` on the snapserver at `addr` (`host:port`), calling
@@ -80,12 +80,12 @@ pub fn channel() -> (Commands, Inbox) {
 /// without closing the connection.
 pub fn run(addr: &str, client: &str, on_stream: impl FnMut(Option<&Stream>)) -> ! {
     let (_, inbox) = channel();
-    run_with_commands(addr, client, inbox, on_stream)
+    run_with_controller(addr, client, inbox, on_stream)
 }
 
 /// As [`run`], also sending the commands that arrive in `inbox`. Commands
 /// while disconnected are refused, not kept for the next connection.
-pub fn run_with_commands(
+pub fn run_with_controller(
     addr: &str,
     client: &str,
     inbox: Inbox,

@@ -40,7 +40,7 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let (commands, inbox) = snapcast::channel();
+    let (controller, inbox) = snapcast::channel();
     #[cfg(debug_assertions)]
     if args.print {
         follow(&args, &client, inbox, debug::printer());
@@ -52,7 +52,7 @@ fn main() -> ExitCode {
         Some((host, _)) => host.to_owned(),
         None => args.server.clone(),
     };
-    let result = ui::run(&art_host, commands, move |mut updates| {
+    let result = ui::run(&art_host, controller, move |mut updates| {
         follow(&args, &client, inbox, |stream| {
             updates.send(stream.map_or(State::Idle, now_playing));
         });
@@ -76,7 +76,7 @@ fn follow(args: &Args, client: &str, inbox: Inbox, on_stream: impl FnMut(Option<
         return debug::replay(log, client, inbox, on_stream);
     }
     eprintln!("now-playing: following client {client} on {}", args.server);
-    snapcast::run_with_commands(&args.server, client, inbox, on_stream)
+    snapcast::run_with_controller(&args.server, client, inbox, on_stream)
 }
 
 /// The contents of the log at `path`, for `--fake`.
