@@ -6,7 +6,7 @@ playing, over a blurred, darkened copy of the cover. When nothing is
 playing, the screen is black.
 
 It's built for a TV on a Linux HTPC, launched from Steam's Gaming Mode
-(gamescope), but runs on any Linux desktop with SDL2.
+(gamescope), but runs on any Linux desktop with SDL3.
 
 A companion service, [`now-playing-switcher`](#the-switcher), brings it to
 the front when music starts, Kodi to the front when Kodi plays, and
@@ -46,9 +46,8 @@ now-playing [--server HOST:PORT] [--client ID]
 - `--client`: the Snapcast client to follow, by id or host name. Defaults
   to this machine's hostname.
 
-Keys: Esc, Backspace or a remote's Back button quit. In Gaming Mode,
-Steam's "Exit game" also quits; the Steam button leaves it running in
-the background.
+No key quits it. In Gaming Mode, Steam's "Exit game" quits it; the Steam
+button leaves it running in the background.
 
 ### Debug builds
 
@@ -58,12 +57,13 @@ Debug builds add two options that release builds leave out:
 - `--fake LOG` replays a captured log from `core/tests/fixtures/` instead
   of connecting, with its original timing.
 - Keys the window doesn't handle are logged to stderr with their SDL
-  keycode and scancode, to find what a remote's buttons send.
+  keycode and scancode and the platform's raw code, to find what a
+  remote's buttons send.
 
 ## Building
 
-Needs Rust (2024 edition) and the SDL2 development files (`SDL2-devel` on
-Fedora, `sdl2` on Arch, `libsdl2-dev` on Debian).
+Needs Rust (2024 edition) and the development files for SDL 3.4 or newer
+(`SDL3-devel` on Fedora, `sdl3` on Arch, `libsdl3-dev` on Debian).
 
 ```
 cargo build --release
@@ -73,9 +73,9 @@ cargo test
 This builds the three binaries in `target/release/`: `now-playing`,
 `now-playing-switcher` and
 [`now-playing-placeholder`](#the-placeholder-window). The switcher needs no
-system libraries; the placeholder, like Now Playing, links SDL2.
+system libraries; the placeholder, like Now Playing, links SDL3.
 
-The binary links the system libSDL2 and glibc, so build it against the
+The binary links the system libSDL3 and glibc, so build it against the
 same versions as the machine it runs on. For a Fedora-based target such
 as Bazzite, the `Containerfile` gives a matching build environment:
 

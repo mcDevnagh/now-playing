@@ -1,4 +1,4 @@
-//! The full-screen SDL2 window and its event loop.
+//! The full-screen SDL window and its event loop.
 //!
 //! The main thread sleeps in `SDL_WaitEvent`. It wakes for input and window
 //! events, for a user event pushed when a new state or cover arrives, and
@@ -11,14 +11,13 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use sdl2::event::{Event, EventSender, WindowEvent};
-use sdl2::keyboard::Keycode;
+use sdl3::event::{Event, EventSender, WindowEvent};
 #[cfg(debug_assertions)]
-use sdl2::keyboard::Scancode;
-use sdl2::pixels::{Color, PixelFormatEnum};
-use sdl2::rect::Rect as SdlRect;
-use sdl2::render::{BlendMode, Texture, TextureCreator, WindowCanvas};
-use sdl2::video::WindowContext;
+use sdl3::keyboard::{Keycode, Scancode};
+use sdl3::pixels::{Color, PixelFormat};
+use sdl3::rect::Rect as SdlRect;
+use sdl3::render::{BlendMode, ScaleMode, Texture, TextureCreator, WindowCanvas};
+use sdl3::video::WindowContext;
 
 use super::layout::{self, Layout, Rect};
 use super::text::Fonts;
@@ -82,29 +81,26 @@ impl Updates {
 /// thread and feeds states through the `Updates` it is given. Covers whose
 /// host doesn't resolve are fetched from `art_host` instead.
 pub fn run(art_host: &str, source: impl FnOnce(Updates) + Send + 'static) -> Result<(), String> {
-    sdl2::hint::set("SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS", "0");
-    // Linear filtering when textures are scaled: smooths the cover, and
-    // turns the tiny background into a blur.
-    sdl2::hint::set("SDL_RENDER_SCALE_QUALITY", "1");
-    let sdl = sdl2::init()?;
-    let video = sdl.video()?;
-    let events = sdl.event()?;
+    sdl3::hint::set("SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS", "0");
+    sdl3::hint::set("SDL_RENDER_VSYNC", "1");
+    let sdl = sdl3::init().map_err(|e| e.to_string())?;
+    let video = sdl.video().map_err(|e| e.to_string())?;
+    let events = sdl.event().map_err(|e| e.to_string())?;
     // SAFETY: SDL is initialised and this is the thread that initialised it.
-    let kind = unsafe { events.register_event()? };
+    let kind = unsafe { events.register_event() }.map_err(|e| e.to_string())?;
 
     // The display's own size, for when nothing makes the window fullscreen,
     // as without a window manager.
-    let mode = video.desktop_display_mode(0)?;
+    let mode = video
+        .get_primary_display()
+        .and_then(|display| display.get_mode())
+        .map_err(|e| e.to_string())?;
     let window = video
         .window("Now Playing", mode.w as u32, mode.h as u32)
-        .fullscreen_desktop()
+        .fullscreen()
         .build()
         .map_err(|e| e.to_string())?;
-    let mut canvas = window
-        .into_canvas()
-        .present_vsync()
-        .build()
-        .map_err(|e| e.to_string())?;
+    let mut canvas = window.into_canvas();
     canvas.set_blend_mode(BlendMode::Blend);
     sdl.mouse().show_cursor(false);
 
@@ -122,7 +118,7 @@ pub fn run(art_host: &str, source: impl FnOnce(Updates) + Send + 'static) -> Res
     let art = spawn_art(Fetcher::new(art_host), tx, waker());
 
     let creator = canvas.texture_creator();
-    let (_, height) = canvas.output_size()?;
+    let (_, height) = canvas.output_size().map_err(|e| e.to_string())?;
     let mut screen = Screen {
         fonts: Fonts::load(),
         creator: &creator,
@@ -162,13 +158,13 @@ fn spawn_art(fetcher: Fetcher, tx: Sender<Message>, waker: Waker) -> Sender<(Str
 }
 
 fn event_loop(
-    sdl: &sdl2::Sdl,
+    sdl: &sdl3::Sdl,
     canvas: &mut WindowCanvas,
     screen: &mut Screen,
     rx: &Receiver<Message>,
     kind: u32,
 ) -> Result<(), String> {
-    let mut pump = sdl.event_pump()?;
+    let mut pump = sdl.event_pump().map_err(|e| e.to_string())?;
     let mut focused = true;
     let mut shown = true;
     let mut dirty = true;
@@ -198,7 +194,7 @@ fn event_loop(
             _ if fading => pump.poll_event(),
             Some(tick) => {
                 let wait = tick.saturating_duration_since(Instant::now());
-                pump.wait_event_timeout(wait.as_millis().max(1) as u32)
+                pump.wait_event_timeout(wait.max(Duration::from_millis(1)))
             }
             None => Some(pump.wait_event()),
         };
@@ -206,11 +202,8 @@ fn event_loop(
         // handles both.
         let Some(event) = event else { continue };
         match event {
-            Event::Quit { .. }
-            | Event::KeyDown {
-                keycode: Some(Keycode::Escape | Keycode::Backspace | Keycode::AcBack),
-                ..
-            } => return Ok(()),
+            // No key quits: in Gaming Mode, Steam's "Exit game" closes it.
+            Event::Quit { .. } => return Ok(()),
             Event::User { type_, .. } if type_ == kind => {
                 for message in rx.try_iter() {
                     screen.receive(canvas, message)?;
@@ -225,9 +218,9 @@ fn event_loop(
                 }
                 WindowEvent::Hidden | WindowEvent::Minimized => shown = false,
                 WindowEvent::Exposed => dirty = true,
-                WindowEvent::SizeChanged(..) => {
+                WindowEvent::PixelSizeChanged(..) => {
                     screen.cancel_fade();
-                    screen.resize(canvas.output_size()?.1);
+                    screen.resize(canvas.output_size().map_err(|e| e.to_string())?.1);
                     dirty = true;
                 }
                 _ => {}
@@ -243,21 +236,23 @@ fn event_loop(
             Event::KeyDown {
                 keycode,
                 scancode,
+                raw,
                 repeat: false,
                 ..
-            } => log_key(keycode, scancode),
+            } => log_key(keycode, scancode, raw),
             _ => {}
         }
     }
 }
 
-/// One line per key, e.g. `key: keycode Escape (0x1b), scancode Escape (41)`.
-/// SDL names a key it doesn't know with an empty string.
+/// One line per key, e.g.
+/// `key: keycode Escape (0x1b), scancode Escape (41), raw 9`. `raw` is the
+/// platform's own code for the key, such as the X11 keycode.
 #[cfg(debug_assertions)]
-fn log_key(keycode: Option<Keycode>, scancode: Option<Scancode>) {
-    let keycode = keycode.map_or("none".to_owned(), |k| format!("{k} ({:#x})", k.into_i32()));
+fn log_key(keycode: Option<Keycode>, scancode: Option<Scancode>, raw: u16) {
+    let keycode = keycode.map_or("none".to_owned(), |k| format!("{k} ({:#x})", k as u32));
     let scancode = scancode.map_or("none".to_owned(), |s| format!("{s} ({})", s as i32));
-    eprintln!("now-playing: key: keycode {keycode}, scancode {scancode}");
+    eprintln!("now-playing: key: keycode {keycode}, scancode {scancode}, raw {raw}");
 }
 
 /// What's on screen, and the textures that draw it.
@@ -325,7 +320,7 @@ struct CoverTextures<'t> {
 impl<'t> Screen<'t> {
     /// Applies `message`, first starting a fade if it changes what's shown.
     fn receive(&mut self, canvas: &mut WindowCanvas, message: Message) -> Result<(), String> {
-        if self.visible && canvas.render_target_supported() && self.changes_look(&message) {
+        if self.visible && self.changes_look(&message) {
             self.start_fade(canvas)?;
         }
         match message {
@@ -427,7 +422,7 @@ impl<'t> Screen<'t> {
     /// whatever comes next. If a fade is already running, its current frame
     /// is what fades out.
     fn start_fade(&mut self, canvas: &mut WindowCanvas) -> Result<(), String> {
-        let (width, height) = canvas.output_size()?;
+        let (width, height) = canvas.output_size().map_err(|e| e.to_string())?;
         let mut from = self
             .creator
             .create_texture_target(canvas.default_pixel_format(), width, height)
@@ -479,7 +474,7 @@ impl<'t> Screen<'t> {
             let track = track.clone();
             let progress = self.progress(&track);
             let with_cover = self.shows_cover(&track);
-            let size = canvas.output_size()?;
+            let size = canvas.output_size().map_err(|e| e.to_string())?;
             self.update_scene(&track, with_cover, size)?;
             let scene = self.scene.as_mut().expect("scene just updated");
             let cover = self.cover.as_mut().filter(|_| with_cover);
@@ -490,7 +485,9 @@ impl<'t> Screen<'t> {
             if done < 1.0 {
                 fade.from
                     .set_alpha_mod((255.0 * (1.0 - done)).round() as u8);
-                canvas.copy(&fade.from, None, None)?;
+                canvas
+                    .copy(&fade.from, None, None)
+                    .map_err(|e| e.to_string())?;
             } else {
                 self.fade = None;
             }
@@ -558,13 +555,17 @@ fn draw_scene(
         let offset = |length: u32| (length as i32 - side as i32) / 2;
         cover.blur.set_alpha_mod(alpha(1.0));
         let background = SdlRect::new(offset(width), offset(height), side, side);
-        canvas.copy(&cover.blur, None, background)?;
+        canvas
+            .copy(&cover.blur, None, background)
+            .map_err(|e| e.to_string())?;
         canvas.set_draw_color(Color::RGBA(0, 0, 0, BACKGROUND_DIM));
-        canvas.fill_rect(None)?;
+        canvas.fill_rect(None).map_err(|e| e.to_string())?;
 
         if let Some(rect) = scene.layout.cover {
             cover.image.set_alpha_mod(alpha(1.0));
-            canvas.copy(&cover.image, None, sdl_rect(rect))?;
+            canvas
+                .copy(&cover.image, None, sdl_rect(rect))
+                .map_err(|e| e.to_string())?;
         }
     }
     for (line, texture) in scene.layout.lines.iter().zip(&mut scene.lines) {
@@ -576,16 +577,18 @@ fn draw_scene(
             query.width,
             query.height,
         );
-        canvas.copy(texture, None, dst)?;
+        canvas.copy(texture, None, dst).map_err(|e| e.to_string())?;
     }
     if let (Some(bar), Some(progress)) = (scene.layout.bar, progress) {
         canvas.set_draw_color(Color::RGBA(255, 255, 255, alpha(0.2)));
-        canvas.fill_rect(sdl_rect(bar))?;
+        canvas.fill_rect(sdl_rect(bar)).map_err(|e| e.to_string())?;
         canvas.set_draw_color(Color::RGBA(255, 255, 255, alpha(1.0)));
-        canvas.fill_rect(sdl_rect(Rect {
-            w: bar.w * progress,
-            ..bar
-        }))?;
+        canvas
+            .fill_rect(sdl_rect(Rect {
+                w: bar.w * progress,
+                ..bar
+            }))
+            .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -595,12 +598,15 @@ fn rgba_texture<'t>(
     image: &Image,
 ) -> Result<Texture<'t>, String> {
     let mut texture = creator
-        .create_texture_static(PixelFormatEnum::RGBA32, image.width, image.height)
+        .create_texture_static(PixelFormat::RGBA32, image.width, image.height)
         .map_err(|e| e.to_string())?;
     texture
         .update(None, &image.rgba, image.width as usize * 4)
         .map_err(|e| e.to_string())?;
     texture.set_blend_mode(BlendMode::Blend);
+    // Linear filtering when scaled: smooths the cover, and turns the tiny
+    // background into a blur.
+    texture.set_scale_mode(ScaleMode::Linear);
     Ok(texture)
 }
 
