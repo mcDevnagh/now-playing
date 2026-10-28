@@ -1,3 +1,4 @@
+use super::control::control_request;
 use super::*;
 use crate::fixtures::{
     GO_LIBRESPOT_LOG, GROUP_SWITCH_LOG, META_GO_LIBRESPOT_LOG, META_LOG, META_SWITCH_LOG,
@@ -192,4 +193,136 @@ fn bad_lines_change_nothing() {
         .title
         .as_deref();
     assert_eq!(title, Some("Track A"));
+}
+
+/// A log's lines, without their times.
+fn lines(log: &str) -> impl Iterator<Item = &str> {
+    log.lines().map(|line| line.split_once('\t').unwrap().1)
+}
+
+/// The log, and its last line, the captured `Stream not found` error.
+fn split_error(log: &str) -> (&str, &str) {
+    let (log, error) = log.trim_end().rsplit_once('\n').unwrap();
+    (log, error.split_once('\t').unwrap().1)
+}
+
+fn can_everything(stream: &Stream) -> bool {
+    let p = &stream.properties;
+    p.can_control && p.can_play && p.can_pause && p.can_go_next && p.can_go_previous
+}
+
+#[test]
+fn go_librespot_commands() {
+    let d = Some(0.0020000000949949026);
+    let expected = [
+        (
+            GO_LIBRESPOT_LOG,
+            vec![
+                playing("Track A", Some(0.0)),
+                // play/pause, and the resume's Stream.OnUpdate still says paused
+                paused("Track A", Some(0.0)),
+                playing("Track A", Some(0.0)),
+                // next
+                playing("Track B", Some(0.0)),
+            ],
+        ),
+        (
+            META_GO_LIBRESPOT_LOG,
+            vec![
+                playing("Track C", Some(0.0)),
+                None,
+                playing("Track D", d),
+                paused("Track D", d),
+                paused("Track E", Some(0.0)),
+                playing("Track E", Some(0.0)),
+            ],
+        ),
+    ];
+    for (log, states) in expected {
+        let (log, _) = split_error(log);
+        let replayed = replay(log);
+        let mut got: Vec<_> = replayed.iter().map(|(_, s)| summary(s)).collect();
+        got.dedup();
+        assert_eq!(got, states);
+
+        for (line, (action, _)) in lines(log).zip(&replayed).skip(1) {
+            if line.contains(r#""result":"ok""#) {
+                assert_eq!(*action, Action::Ignored);
+            }
+        }
+
+        let mut session = Session::new("HTPC");
+        for line in lines(log) {
+            session.handle(line).unwrap();
+            assert!(can_everything(session.stream().unwrap()));
+        }
+    }
+}
+
+#[test]
+fn control_replies_change_nothing() {
+    let (log, _) = split_error(GO_LIBRESPOT_LOG);
+    let status = lines(log).next().unwrap();
+    let ok = r#"{"id":2,"jsonrpc":"2.0","result":"ok"}"#;
+
+    // Before the first status, and between status replies.
+    let mut session = Session::new("HTPC");
+    assert_eq!(session.handle(ok), Ok(Action::Ignored));
+    assert!(session.stream().is_none());
+    assert_eq!(session.handle(status), Ok(Action::Resolved));
+    assert_eq!(session.handle(ok), Ok(Action::Ignored));
+    assert_eq!(session.stream().unwrap().id, "Meta-HTPC");
+    assert_eq!(session.handle(status), Ok(Action::Resolved));
+    assert_eq!(session.stream().unwrap().id, "Meta-HTPC");
+}
+
+#[test]
+fn control_error_keeps_stream() {
+    for log in [GO_LIBRESPOT_LOG, META_GO_LIBRESPOT_LOG] {
+        let (log, error) = split_error(log);
+        let mut session = Session::new("HTPC");
+        for line in lines(log) {
+            session.handle(line).unwrap();
+        }
+        let e = session.handle(error).unwrap_err();
+        assert!(e.contains("request 6"), "{e}");
+        assert!(e.contains("Stream not found"), "{e}");
+        assert_eq!(session.stream().unwrap().id, "Meta-HTPC");
+    }
+}
+
+#[test]
+fn control_request_lines() {
+    assert_eq!(
+        control_request(7, "Meta-HTPC", Command::PlayPause),
+        r#"{"id":7,"jsonrpc":"2.0","method":"Stream.Control","params":{"command":"playPause","id":"Meta-HTPC"}}"#
+    );
+    assert_eq!(
+        control_request(8, "Meta-HTPC", Command::Next),
+        r#"{"id":8,"jsonrpc":"2.0","method":"Stream.Control","params":{"command":"next","id":"Meta-HTPC"}}"#
+    );
+    assert_eq!(
+        control_request(9, "Meta-HTPC", Command::Previous),
+        r#"{"id":9,"jsonrpc":"2.0","method":"Stream.Control","params":{"command":"previous","id":"Meta-HTPC"}}"#
+    );
+    // A stream id is escaped, not pasted in.
+    assert_eq!(
+        control_request(1, r#"a"b\c"#, Command::Next),
+        r#"{"id":1,"jsonrpc":"2.0","method":"Stream.Control","params":{"command":"next","id":"a\"b\\c"}}"#
+    );
+}
+
+#[test]
+fn sources_without_control_cannot() {
+    // META_LOG says false; the hand-written logs don't say.
+    for log in [META_LOG, GROUP_SWITCH_LOG, SPARSE_LOG] {
+        let (_, state) = &replay(log)[0];
+        assert_ne!(*state, State::Idle);
+        let mut session = Session::new("HTPC");
+        session.handle(lines(log).next().unwrap()).unwrap();
+        let p = &session.stream().unwrap().properties;
+        assert!(
+            !(p.can_control || p.can_play || p.can_pause || p.can_go_next || p.can_go_previous)
+        );
+    }
 }

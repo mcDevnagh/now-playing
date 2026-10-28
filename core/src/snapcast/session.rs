@@ -13,7 +13,8 @@ use super::{Server, Stream};
 /// What a line meant for us.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Action {
-    /// Nothing to do: a notification about something else.
+    /// Nothing to do: a notification about something else, or a reply to
+    /// a command.
     Ignored,
     /// A full status arrived and our stream was looked up again; it may now
     /// be `None`.
@@ -48,11 +49,16 @@ impl Session {
     pub fn handle(&mut self, line: &str) -> Result<Action, String> {
         let msg: Value = serde_json::from_str(line).map_err(|e| format!("malformed line: {e}"))?;
         if let Some(error) = msg.get("error") {
-            return Err(format!("error response: {error}"));
+            return Err(format!("error response to request {}: {error}", msg["id"]));
         }
-        // The only request we send is Server.GetStatus.
+        // Told apart by shape, not by id: a log replayed without its
+        // requests still works. Only Server.GetStatus replies with a server;
+        // Stream.Control replies "ok".
         if let Some(result) = msg.get("result") {
-            return self.resolve(&result["server"]);
+            return match result.get("server") {
+                Some(server) => self.resolve(server),
+                None => Ok(Action::Ignored),
+            };
         }
 
         let params = &msg["params"];

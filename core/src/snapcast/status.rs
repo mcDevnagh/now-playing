@@ -81,6 +81,18 @@ pub struct Properties {
     pub position: Option<f64>,
     #[serde(default)]
     pub metadata: Metadata,
+    /// Whether the stream takes `Stream.Control` commands at all, and
+    /// which. A source that doesn't say can't.
+    #[serde(default)]
+    pub can_control: bool,
+    #[serde(default)]
+    pub can_play: bool,
+    #[serde(default)]
+    pub can_pause: bool,
+    #[serde(default)]
+    pub can_go_next: bool,
+    #[serde(default)]
+    pub can_go_previous: bool,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
