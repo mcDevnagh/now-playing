@@ -3,7 +3,7 @@ use std::process::ExitCode;
 use clap::Parser;
 #[cfg(debug_assertions)]
 use now_playing::debug;
-use now_playing::snapcast::{self, Stream};
+use now_playing::snapcast::{self, Inbox, Stream};
 use now_playing::state::{State, now_playing};
 use now_playing::ui;
 use now_playing_core::hostname;
@@ -40,9 +40,10 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let (commands, inbox) = snapcast::channel();
     #[cfg(debug_assertions)]
     if args.print {
-        follow(&args, &client, debug::printer());
+        follow(&args, &client, inbox, debug::printer());
         return ExitCode::SUCCESS;
     }
 
@@ -51,8 +52,8 @@ fn main() -> ExitCode {
         Some((host, _)) => host.to_owned(),
         None => args.server.clone(),
     };
-    let result = ui::run(&art_host, move |mut updates| {
-        follow(&args, &client, |stream| {
+    let result = ui::run(&art_host, commands, move |mut updates| {
+        follow(&args, &client, inbox, |stream| {
             updates.send(stream.map_or(State::Idle, now_playing));
         });
     });
@@ -65,16 +66,17 @@ fn main() -> ExitCode {
     }
 }
 
-/// Feeds our client's stream to `on_stream`, from the server. Returns only
-/// at the end of a `--fake` log.
-fn follow(args: &Args, client: &str, on_stream: impl FnMut(Option<&Stream>)) {
+/// Feeds our client's stream to `on_stream`, from the server, and sends it
+/// the commands that arrive in `inbox`. Returns only at the end of a
+/// `--fake` log.
+fn follow(args: &Args, client: &str, inbox: Inbox, on_stream: impl FnMut(Option<&Stream>)) {
     #[cfg(debug_assertions)]
     if let Some(log) = &args.fake {
         eprintln!("now-playing: replaying a log for client {client}");
-        return debug::replay(log, client, on_stream);
+        return debug::replay(log, client, inbox, on_stream);
     }
     eprintln!("now-playing: following client {client} on {}", args.server);
-    snapcast::run(&args.server, client, on_stream)
+    snapcast::run_with_commands(&args.server, client, inbox, on_stream)
 }
 
 /// The contents of the log at `path`, for `--fake`.

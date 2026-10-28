@@ -1,3 +1,4 @@
+mod keys;
 mod layout;
 mod text;
 mod window;

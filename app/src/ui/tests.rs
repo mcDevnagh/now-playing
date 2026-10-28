@@ -144,3 +144,33 @@ fn only_text_changes_need_a_new_layout() {
     assert!(same_layout(&a, &new_cover));
     assert!(!same_layout(&a, &renamed));
 }
+
+#[test]
+fn media_keys_send_commands() {
+    use sdl3::keyboard::Keycode;
+
+    use super::keys::command_for;
+    use crate::snapcast::Command;
+
+    assert_eq!(
+        command_for(Some(Keycode::MediaPlayPause)),
+        Some(Command::PlayPause)
+    );
+    assert_eq!(
+        command_for(Some(Keycode::MediaNextTrack)),
+        Some(Command::Next)
+    );
+    assert_eq!(
+        command_for(Some(Keycode::MediaPreviousTrack)),
+        Some(Command::Previous)
+    );
+    for other in [
+        Keycode::Escape,
+        Keycode::Space,
+        Keycode::AcBack,
+        Keycode::MediaPlay,
+    ] {
+        assert_eq!(command_for(Some(other)), None, "{other}");
+    }
+    assert_eq!(command_for(None), None);
+}

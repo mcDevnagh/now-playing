@@ -22,7 +22,11 @@ the front when music starts, Kodi to the front when Kodi plays, and
   its client is playing and updates as that stream's metadata and
   playback status change, including when the client moves to another
   group or stream.
-- It only reads: it never controls playback or changes the server.
+- The remote's play/pause, next and previous keys control the stream
+  it follows, as snapserver's `Stream.Control`. That's only sent when
+  the stream says it allows it (its `can*` properties), as go-librespot
+  streams, and meta streams over them, do; other sources are left alone.
+  Nothing else about the server is changed.
 - Metadata comes from the stream's properties. Sources that report
   playback status and position (such as a librespot stream with a
   metadata script) get a progress bar and a paused look; sources that
@@ -46,16 +50,23 @@ now-playing [--server HOST:PORT] [--client ID]
 - `--client`: the Snapcast client to follow, by id or host name. Defaults
   to this machine's hostname.
 
+The media keys play or pause, skip to the next track and go back to the
+previous one, while the window is in front. A key that isn't sent,
+because there's no stream or the stream doesn't allow it, logs one line
+saying why. Holding a key sends it once.
+
 No key quits it. In Gaming Mode, Steam's "Exit game" quits it; the Steam
 button leaves it running in the background.
 
 ### Debug builds
 
-Debug builds add two options that release builds leave out:
+Debug builds add two options, and a key log, that release builds leave
+out:
 
 - `--print` prints state changes instead of opening the window.
 - `--fake LOG` replays a captured log from `core/tests/fixtures/` instead
-  of connecting, with its original timing.
+  of connecting, with its original timing. A media key logs the line it
+  would send to the replay's stream.
 - Keys the window doesn't handle are logged to stderr with their SDL
   keycode and scancode and the platform's raw code, to find what a
   remote's buttons send.
