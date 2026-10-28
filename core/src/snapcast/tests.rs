@@ -3,7 +3,7 @@ use std::io;
 use serde_json::Value;
 
 use super::connection::{Follow, Input};
-use super::control::control_request;
+use super::control::{control_request, set_muted_request};
 use super::*;
 use crate::fixtures::{
     GO_LIBRESPOT_LOG, GROUP_SWITCH_LOG, META_GO_LIBRESPOT_LOG, META_LOG, META_SWITCH_LOG,
@@ -32,6 +32,18 @@ fn host_name_matches_when_id_does_not() {
     let mut server = meta_status();
     server.groups[1].clients[0].id = "living-room".into();
     assert_eq!(stream_id(&server, "htpc"), Some("Spotify-HTPC"));
+}
+
+#[test]
+fn client_for_finds_disconnected_clients() {
+    let mut server = meta_status();
+    server.groups[1].clients[0].id = "living-room".into();
+    server.groups[1].clients[0].connected = false;
+    let id = |client| server.client_for(client).map(|c| c.id.as_str());
+    assert_eq!(id("living-room"), Some("living-room"));
+    assert_eq!(id("LIVING-ROOM"), Some("living-room"));
+    assert_eq!(id("htpc"), Some("living-room"));
+    assert_eq!(id("Kitchen"), None);
 }
 
 #[test]
@@ -533,5 +545,100 @@ fn commands_from_an_outage_are_refused() {
     assert_eq!(
         got,
         requests(&[(1, "Server.GetStatus"), (4, "Stream.Control")])
+    );
+}
+
+/// What `set_muted` does with `muted`, and the line it wrote.
+fn mute(session: &Session, muted: bool) -> (Result<(), Refused>, String) {
+    let mut out = Vec::new();
+    let result = set_muted(session, muted, 1, &mut out).unwrap();
+    (result, String::from_utf8(out).unwrap())
+}
+
+#[test]
+fn set_muted_request_lines() {
+    assert_eq!(
+        set_muted_request(3, "HTPC", true),
+        r#"{"id":3,"jsonrpc":"2.0","method":"Client.SetVolume","params":{"id":"HTPC","volume":{"muted":true}}}"#
+    );
+    assert_eq!(
+        set_muted_request(4, "HTPC", false),
+        r#"{"id":4,"jsonrpc":"2.0","method":"Client.SetVolume","params":{"id":"HTPC","volume":{"muted":false}}}"#
+    );
+}
+
+#[test]
+fn mutes_go_to_the_client_id() {
+    // Configured by host name, with an id that differs.
+    let mut session = Session::new("htpc");
+    session
+        .handle(&status_with(|server| {
+            server["groups"][1]["clients"][0]["id"] = "living-room".into();
+        }))
+        .unwrap();
+    assert_eq!(session.client_id(), Some("living-room"));
+    for muted in [true, false] {
+        let line = set_muted_request(1, "living-room", muted) + "\n";
+        assert_eq!(mute(&session, muted), (Ok(()), line));
+    }
+}
+
+#[test]
+fn mutes_without_client_are_refused() {
+    let no_status = Session::new("HTPC");
+    let missing_client = session_with(|server| {
+        server["groups"][1]["clients"] = Value::Array(vec![]);
+    });
+    for session in [no_status, missing_client] {
+        assert_eq!(session.client_id(), None);
+        for muted in [true, false] {
+            assert_eq!(mute(&session, muted), (Err(Refused::NoClient), "".into()));
+        }
+    }
+}
+
+#[test]
+fn disconnected_client_can_be_muted() {
+    let session = session_with(|server| {
+        server["groups"][1]["clients"][0]["connected"] = false.into();
+    });
+    assert!(session.stream().is_none());
+    let line = set_muted_request(1, "HTPC", true) + "\n";
+    assert_eq!(mute(&session, true), (Ok(()), line));
+}
+
+#[test]
+fn volume_changes_change_nothing() {
+    // Hand-written: snapserver doesn't send it to the connection that made
+    // the change, so the captures have none.
+    let mut session = session_with(|_| {});
+    let changed = r#"{"jsonrpc":"2.0","method":"Client.OnVolumeChanged","params":{"id":"HTPC","volume":{"muted":true,"percent":50}}}"#;
+    assert_eq!(session.handle(changed), Ok(Action::Ignored));
+    assert_eq!(session.client_id(), Some("HTPC"));
+    assert_eq!(session.stream().unwrap().id, "Meta-HTPC");
+    // Nor does the reply to our own `Client.SetVolume`.
+    let reply = r#"{"id":5,"jsonrpc":"2.0","result":{"volume":{"muted":true,"percent":50}}}"#;
+    assert_eq!(session.handle(reply), Ok(Action::Ignored));
+    assert_eq!(session.client_id(), Some("HTPC"));
+}
+
+#[test]
+fn mutes_share_ids_and_are_refused_from_an_outage() {
+    let got = follow(vec![
+        // Asked for while disconnected: before the first status reply.
+        Input::SetMuted(true),
+        line(2, &status_with(|_| {})),
+        Input::SetMuted(true),
+        Input::Command(Command::Next),
+        Input::SetMuted(false),
+    ]);
+    assert_eq!(
+        got,
+        requests(&[
+            (1, "Server.GetStatus"),
+            (3, "Client.SetVolume"),
+            (4, "Stream.Control"),
+            (5, "Client.SetVolume"),
+        ])
     );
 }

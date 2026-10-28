@@ -1,4 +1,5 @@
-//! Playback commands for the stream our client follows.
+//! Playback commands for the stream our client follows, and our client's
+//! mute.
 
 use std::fmt;
 use std::io::{self, Write};
@@ -32,11 +33,13 @@ impl fmt::Display for Command {
     }
 }
 
-/// Why a command wasn't sent.
+/// Why a command or mute wasn't sent.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Refused {
     /// The client has no stream: not yet, or not any more.
     NoStream,
+    /// The client isn't known: no status yet, or it's missing.
+    NoClient,
     /// The stream doesn't report `flag`.
     NotAllowed { stream: String, flag: &'static str },
 }
@@ -45,6 +48,7 @@ impl fmt::Display for Refused {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Refused::NoStream => f.write_str("no stream to control"),
+            Refused::NoClient => f.write_str("no client"),
             Refused::NotAllowed { stream, flag } => {
                 write!(f, "stream {stream} doesn't allow it (no {flag})")
             }
@@ -94,6 +98,35 @@ pub(super) fn control_request(id: u64, stream: &str, command: Command) -> String
         "jsonrpc": "2.0",
         "method": "Stream.Control",
         "params": {"id": stream, "command": command.name()},
+    })
+    .to_string()
+}
+
+/// Writes the `Client.SetVolume` line that sets our client's mute to
+/// `muted`, with request id `id`, or says why it can't.
+///
+/// Only `muted` is sent: snapserver keeps the volume's percent when it's
+/// left out, so the volume never changes.
+pub fn set_muted(
+    session: &Session,
+    muted: bool,
+    id: u64,
+    out: &mut impl Write,
+) -> io::Result<Result<(), Refused>> {
+    let Some(client) = session.client_id() else {
+        return Ok(Err(Refused::NoClient));
+    };
+    writeln!(out, "{}", set_muted_request(id, client, muted))?;
+    Ok(Ok(()))
+}
+
+/// The `Client.SetVolume` request that sets `client`'s mute to `muted`.
+pub(super) fn set_muted_request(id: u64, client: &str, muted: bool) -> String {
+    json!({
+        "id": id,
+        "jsonrpc": "2.0",
+        "method": "Client.SetVolume",
+        "params": {"id": client, "volume": {"muted": muted}},
     })
     .to_string()
 }

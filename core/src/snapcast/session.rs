@@ -27,6 +27,8 @@ pub enum Action {
 
 pub struct Session {
     client: String,
+    /// The id of the client `client` names, as of the last status.
+    client_id: Option<String>,
     stream: Option<Stream>,
 }
 
@@ -34,6 +36,7 @@ impl Session {
     pub fn new(client: &str) -> Session {
         Session {
             client: client.to_owned(),
+            client_id: None,
             stream: None,
         }
     }
@@ -42,6 +45,13 @@ impl Session {
     /// status, and while the client is missing or disconnected.
     pub fn stream(&self) -> Option<&Stream> {
         self.stream.as_ref()
+    }
+
+    /// Our client's id, as of the last status. `None` until the first
+    /// status, and while the client is missing. A disconnected client keeps
+    /// its id: snapserver still keeps its volume.
+    pub fn client_id(&self) -> Option<&str> {
+        self.client_id.as_deref()
     }
 
     /// Handles one line. An error means the line was malformed or an error
@@ -53,7 +63,7 @@ impl Session {
         }
         // Told apart by shape, not by id: a log replayed without its
         // requests still works. Only Server.GetStatus replies with a server;
-        // Stream.Control replies "ok".
+        // Stream.Control and Client.SetVolume replies don't.
         if let Some(result) = msg.get("result") {
             return match result.get("server") {
                 Some(server) => self.resolve(server),
@@ -85,6 +95,7 @@ impl Session {
 
     fn resolve(&mut self, server: &Value) -> Result<Action, String> {
         let server: Server = parse(server)?;
+        self.client_id = server.client_for(&self.client).map(|c| c.id.clone());
         self.stream = server.stream_for(&self.client).cloned();
         Ok(Action::Resolved)
     }

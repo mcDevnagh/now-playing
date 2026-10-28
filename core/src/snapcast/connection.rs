@@ -2,7 +2,7 @@
 //!
 //! One thread owns the connection: its session, and the socket's writer.
 //! Everything it reacts to arrives on one channel: lines from a reader
-//! thread, and commands from whoever holds [`Controller`].
+//! thread, and commands and mutes from whoever holds [`Controller`].
 
 use std::io::{self, BufRead, BufReader, Write};
 use std::net::{Shutdown, TcpStream};
@@ -10,7 +10,7 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::Instant;
 
-use super::control::{Command, control};
+use super::control::{Command, control, set_muted};
 use super::{Action, Session, Stream};
 use crate::net::{Backoff, connect};
 
@@ -27,9 +27,12 @@ pub(super) enum Input {
         error: io::Error,
     },
     Command(Command),
+    /// Set our client's mute.
+    SetMuted(bool),
 }
 
-/// Sends playback commands to the connection, for the stream it follows.
+/// Sends playback commands to the connection, for the stream it follows,
+/// and mutes for its client.
 #[derive(Clone)]
 pub struct Controller(Sender<Input>);
 
@@ -41,6 +44,19 @@ impl Controller {
             eprintln!("snapcast: not sending {command}: nothing is connected");
         }
     }
+
+    /// Asks the connection to set our client's mute to `muted`. Never
+    /// blocks; does nothing once the connection has gone.
+    pub fn set_muted(&self, muted: bool) {
+        if self.0.send(Input::SetMuted(muted)).is_err() && cfg!(debug_assertions) {
+            eprintln!("snapcast: not {}: nothing is connected", muting(muted));
+        }
+    }
+}
+
+/// What setting the mute to `muted` is, for logging.
+fn muting(muted: bool) -> &'static str {
+    if muted { "muting" } else { "unmuting" }
 }
 
 /// The connection thread's end of [`channel`].
@@ -83,8 +99,9 @@ pub fn run(addr: &str, client: &str, on_stream: impl FnMut(Option<&Stream>)) -> 
     run_with_controller(addr, client, inbox, on_stream)
 }
 
-/// As [`run`], also sending the commands that arrive in `inbox`. Commands
-/// while disconnected are refused, not kept for the next connection.
+/// As [`run`], also sending the commands and mutes that arrive in `inbox`.
+/// Those that arrive while disconnected are refused, not kept for the next
+/// connection.
 pub fn run_with_controller(
     addr: &str,
     client: &str,
@@ -171,7 +188,8 @@ pub(super) struct Follow<W> {
     session: Session,
     connection: u64,
     out: W,
-    /// The last request id used, by `Server.GetStatus` and commands alike.
+    /// The last request id used, by `Server.GetStatus`, commands and mutes
+    /// alike.
     id: u64,
 }
 
@@ -220,6 +238,12 @@ impl<W: Write> Follow<W> {
                 self.id += 1;
                 if let Err(refused) = control(&self.session, command, self.id, &mut self.out)? {
                     eprintln!("snapcast: not sending {command}: {refused}");
+                }
+            }
+            Input::SetMuted(muted) => {
+                self.id += 1;
+                if let Err(refused) = set_muted(&self.session, muted, self.id, &mut self.out)? {
+                    eprintln!("snapcast: not {}: {refused}", muting(muted));
                 }
             }
         }

@@ -15,12 +15,29 @@ pub struct Server {
 }
 
 impl Server {
-    /// The stream `client` is playing: its group's stream.
+    /// The client `client` names, connected or not.
     ///
     /// `client` is matched against client ids, first exactly, then ignoring
-    /// case, then against host names ignoring case. `None` if the client is
-    /// missing or disconnected, or its group's stream doesn't exist.
+    /// case, then against host names ignoring case.
+    pub fn client_for(&self, client: &str) -> Option<&Client> {
+        self.find(client).map(|(_, found)| found)
+    }
+
+    /// The stream `client` is playing: its group's stream.
+    ///
+    /// `client` is matched as by [`client_for`](Self::client_for). `None` if
+    /// the client is missing or disconnected, or its group's stream doesn't
+    /// exist.
     pub fn stream_for(&self, client: &str) -> Option<&Stream> {
+        let (group, found) = self.find(client)?;
+        if !found.connected {
+            return None;
+        }
+        self.streams.iter().find(|s| s.id == group.stream_id)
+    }
+
+    /// The client `client` names, and its group.
+    fn find(&self, client: &str) -> Option<(&Group, &Client)> {
         let clients = || {
             self.groups
                 .iter()
@@ -31,11 +48,7 @@ impl Server {
             &|c| c.id.eq_ignore_ascii_case(client),
             &|c| c.host.name.eq_ignore_ascii_case(client),
         ];
-        let (group, found) = matches.iter().find_map(|m| clients().find(|(_, c)| m(c)))?;
-        if !found.connected {
-            return None;
-        }
-        self.streams.iter().find(|s| s.id == group.stream_id)
+        matches.iter().find_map(|m| clients().find(|(_, c)| m(c)))
     }
 }
 
