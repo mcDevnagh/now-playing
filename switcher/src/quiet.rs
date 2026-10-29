@@ -92,7 +92,7 @@ impl Others {
 
     /// What starting `started` does, to the players we can reach.
     fn quiets(&self, started: Player) -> Vec<Quiet> {
-        let (pause_kodi, muted) = match started {
+        let (pause_kodi, mute_snapcast) = match started {
             Player::Kodi => (false, true),
             Player::Snapcast => (true, false),
             Player::Uxplay => (true, true),
@@ -101,7 +101,7 @@ impl Others {
         let mute = self
             .snapcast
             .is_some()
-            .then_some(Quiet::MuteSnapcast(muted));
+            .then_some(Quiet::MuteSnapcast(mute_snapcast));
         pause.into_iter().chain(mute).collect()
     }
 }
