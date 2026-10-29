@@ -14,17 +14,17 @@ use crate::steam;
 const READY_CHECK: Duration = Duration::from_secs(2);
 
 /// Forever: waits until gamescope is in Gaming Mode and Steam's UI answers,
-/// sends a [`Request::LaunchAtStart`] for each of `apps` (with its wait to
-/// come to the front), then waits for
-/// Gaming Mode to end. So each Gaming Mode session gets its apps, including
-/// one entered from Desktop Mode with the switcher already running.
+/// sends a [`Request::LaunchInGamingMode`] for each of `apps` (with its wait
+/// to come to the front), then waits for Gaming Mode to end. So each Gaming
+/// Mode session gets its apps, including one entered from Desktop Mode with
+/// the switcher already running.
 pub fn run(apps: Vec<(App, Duration)>, display: &str, requests: Sender<Request>) -> ! {
     loop {
         let gamescope = wait_until_ready(display);
         eprintln!("switcher: Steam's UI is up; launching apps at start");
         for &(app, wait) in &apps {
             // The dispatch loop outlives this thread.
-            let _ = requests.send(Request::LaunchAtStart(app, wait));
+            let _ = requests.send(Request::LaunchInGamingMode(app, wait));
         }
         let reason = gamescope.wait_closed();
         eprintln!("switcher: left Gaming Mode ({reason}); will launch apps when it's back");

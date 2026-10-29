@@ -36,7 +36,7 @@ impl Listener for Snapcast {
             if edges.update(playing(stream)) {
                 eprintln!("snapcast: client {client} started playing");
                 // The dispatch loop outlives the listeners.
-                let _ = requests.send(Request::Started {
+                let _ = requests.send(Request::PlaybackStarted {
                     player: Player::Snapcast,
                     app,
                 });

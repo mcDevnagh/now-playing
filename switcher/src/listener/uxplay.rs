@@ -45,7 +45,7 @@ impl Listener for Uxplay {
                             Some(true) => {
                                 eprintln!("uxplay: mirroring started");
                                 // The dispatch loop outlives the listeners.
-                                let _ = requests.send(Request::Started {
+                                let _ = requests.send(Request::PlaybackStarted {
                                     player: Player::Uxplay,
                                     app,
                                 });

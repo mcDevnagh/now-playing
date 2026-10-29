@@ -13,9 +13,9 @@ use crate::action::Request;
 use crate::config::Config;
 use crate::quiet::Others;
 
-/// Follows a player, sending [`Request::Started`] on `requests` whenever it
-/// starts. Holds everything it needs, such as addresses; the rules for what
-/// counts as a start are its own.
+/// Follows a player, sending [`Request::PlaybackStarted`] on `requests`
+/// whenever it starts. Holds everything it needs, such as addresses; the
+/// rules for what counts as a start are its own.
 pub trait Listener: Send {
     /// Runs forever, reconnecting as needed.
     fn run(self: Box<Self>, requests: Sender<Request>) -> !;

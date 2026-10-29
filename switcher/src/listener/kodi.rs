@@ -44,7 +44,7 @@ impl Listener for Kodi {
                     let result = follow(stream, connection, &self.inbox, &mut || {
                         eprintln!("kodi: playback started");
                         // The dispatch loop outlives the listeners.
-                        let _ = requests.send(Request::Started {
+                        let _ = requests.send(Request::PlaybackStarted {
                             player: Player::Kodi,
                             app: self.app,
                         });

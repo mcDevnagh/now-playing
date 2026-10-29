@@ -15,10 +15,10 @@ use crate::steam;
 pub enum Request {
     /// A player started: quiet the others, and bring `app` to the front,
     /// launching it if it isn't running, if its table switches to it.
-    Started { player: Player, app: Option<App> },
+    PlaybackStarted { player: Player, app: Option<App> },
     /// Launch the app if it isn't running, then go back to Steam's home, so
     /// it waits in the background: once it's in front, or after the wait.
-    LaunchAtStart(App, Duration),
+    LaunchInGamingMode(App, Duration),
 }
 
 /// What to do for an app that asked to be shown.
@@ -63,14 +63,24 @@ const LAUNCH_RETRY: Duration = Duration::from_secs(5);
 /// logging what it did. With `dry_run`, it only logs what it would do.
 pub fn handle(request: Request, others: &Others, display: &str, dry_run: bool) {
     match request {
-        Request::Started { player, app } => started(player, app, others, display, dry_run),
-        Request::LaunchAtStart(app, wait) => launch_at_start(app, wait, display, dry_run),
+        Request::PlaybackStarted { player, app } => {
+            playback_started(player, app, others, display, dry_run)
+        }
+        Request::LaunchInGamingMode(app, wait) => {
+            launch_in_gaming_mode(app, wait, display, dry_run)
+        }
     }
 }
 
 /// `player` started: in Gaming Mode only, quiets `others`, then brings
 /// `app` to the front.
-fn started(player: Player, app: Option<App>, others: &Others, display: &str, dry_run: bool) {
+fn playback_started(
+    player: Player,
+    app: Option<App>,
+    others: &Others,
+    display: &str,
+    dry_run: bool,
+) {
     let who = app.map_or_else(|| player.to_string(), |app| app.to_string());
     let front =
         Gamescope::connect(display).and_then(|gamescope| Ok((gamescope.focused_app()?, gamescope)));
@@ -112,7 +122,7 @@ fn show(app: App, gamescope: &Gamescope, front: u32, dry_run: bool) {
 
 /// Launches `app` on `display` if it isn't running, then goes back to
 /// Steam's home once it's in front, or after `wait`.
-fn launch_at_start(app: App, wait: Duration, display: &str, dry_run: bool) {
+fn launch_in_gaming_mode(app: App, wait: Duration, display: &str, dry_run: bool) {
     let gamescope = match Gamescope::connect(display) {
         Ok(gamescope) => gamescope,
         Err(e) => return eprintln!("switcher: {app}: not launched at start ({e})"),
