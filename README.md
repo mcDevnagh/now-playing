@@ -150,22 +150,24 @@ choice back.)
    it off. Kodi's web server also uses port 8080, but on IPv6, so the two
    don't clash.
 4. **Config:** copy `switcher/switcher.example.toml` to
-   `~/.config/now-playing/switcher.toml` and fill it in. The switcher only
-   brings an app to the front if its table gives `app`, its gamescope ID.
-   To find it, bring the app to the front and run:
+   `~/.config/now-playing/switcher.toml` and fill it in. Each table needs
+   `gamescope_id`, its app's gamescope ID, and the switcher only brings the
+   app to the front if the table sets `show_on_playback = true`. To find the
+   gamescope ID, bring the app to the front and run:
 
    ```
    DISPLAY=:0 xprop -root GAMESCOPE_FOCUSED_APP
    ```
 
-   A non-Steam game's launch ID is its gamescope ID × 2³² + 0x02000000:
+   To be launched, an app also needs `steam_game_id`. A non-Steam game's
+   Steam game ID is its gamescope ID × 2³² + 0x02000000:
 
    ```
    python3 -c 'print(GAMESCOPE_ID << 32 | 0x02000000)'
    ```
 
    To launch an app whenever Gaming Mode starts, at login or from Desktop
-   Mode, set `launch_at_start = true` in its table, with its launch ID. It
+   Mode, set `launch_at_start = true` in its table, with its Steam game ID. It
    isn't launched again if it's already running, as after a restart of the
    switcher. An app that opens no window until it's used never comes to
    the front: Steam stays on its launching screen. So after

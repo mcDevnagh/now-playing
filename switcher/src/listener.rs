@@ -23,16 +23,20 @@ pub trait Listener: Send {
 
 /// The listeners `config` asks for, and what their starts do to each other.
 ///
-/// Without `quiet_others`, there's one listener per table that gives `app`,
-/// and `Others` is empty. With it, every table gets a listener, since a
-/// table with only `launch` still names a player to quiet and be quieted
-/// by; its listener's `app` is `None`.
+/// Without `quiet_others`, there's one listener per table that sets
+/// `show_on_playback`, and `Others` is empty. With it, every table gets a
+/// listener, since a table that doesn't show its app still names a player
+/// to quiet and be quieted by; its listener's `app` is `None`.
 pub fn from_config(config: &Config) -> Result<(Vec<Box<dyn Listener>>, Others), String> {
     let quiet = config.quiet_others;
     let mut listeners: Vec<Box<dyn Listener>> = Vec::new();
     let mut kodi_controller = None;
     let mut snapcast_controller = None;
-    if let Some(table) = config.snapcast.as_ref().filter(|t| t.switch || quiet) {
+    if let Some(table) = config
+        .snapcast
+        .as_ref()
+        .filter(|t| t.show_on_playback || quiet)
+    {
         let client = match &table.client {
             Some(client) => client.clone(),
             None => {
@@ -44,24 +48,28 @@ pub fn from_config(config: &Config) -> Result<(Vec<Box<dyn Listener>>, Others), 
         listeners.push(Box::new(snapcast::Snapcast {
             server: table.server.clone(),
             client,
-            app: table.switch.then_some(table.app),
+            app: table.show_on_playback.then_some(table.app),
             inbox,
         }));
     }
-    if let Some(table) = config.kodi.as_ref().filter(|t| t.switch || quiet) {
+    if let Some(table) = config.kodi.as_ref().filter(|t| t.show_on_playback || quiet) {
         let (controller, inbox) = kodi::channel();
         kodi_controller = quiet.then_some(controller);
         listeners.push(Box::new(kodi::Kodi {
             address: table.address.clone(),
-            app: table.switch.then_some(table.app),
+            app: table.show_on_playback.then_some(table.app),
             inbox,
         }));
     }
-    if let Some(table) = config.uxplay.as_ref().filter(|t| t.switch || quiet) {
+    if let Some(table) = config
+        .uxplay
+        .as_ref()
+        .filter(|t| t.show_on_playback || quiet)
+    {
         listeners.push(Box::new(uxplay::Uxplay {
             window_class: table.window_class.clone(),
             gamescope: table.app.gamescope,
-            app: table.switch.then_some(table.app),
+            app: table.show_on_playback.then_some(table.app),
         }));
     }
     let others = Others::new(kodi_controller, snapcast_controller);

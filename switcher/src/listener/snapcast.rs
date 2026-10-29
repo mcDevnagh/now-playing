@@ -17,7 +17,8 @@ use crate::quiet::Player;
 pub struct Snapcast {
     pub server: String,
     pub client: String,
-    /// The app to show on a start; `None` if the table doesn't switch.
+    /// The app to show on a start; `None` without
+    /// `show_on_playback`.
     pub app: Option<App>,
     pub inbox: Inbox,
 }

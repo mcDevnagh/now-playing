@@ -2,19 +2,22 @@ use super::*;
 
 const FULL: &str = r#"
     [kodi]
-    app = 1
+    gamescope_id = 1
+    show_on_playback = true
     address = "kodi:9090"
 
     [snapcast]
-    app = 2457742405
-    launch = 10555923251500941312
+    gamescope_id = 2457742405
+    steam_game_id = 10555923251500941312
+    show_on_playback = true
     server = "snapserver:1705"
     client = "TV"
     launch_at_start = true
     launch_at_start_wait = 5
 
     [uxplay]
-    launch = 12918456320
+    gamescope_id = 3
+    steam_game_id = 12918456320
     window_class = "Mirror"
     launch_at_start = true
 "#;
@@ -31,7 +34,7 @@ fn full() {
                     gamescope: 1,
                     launch: None,
                 },
-                switch: true,
+                show_on_playback: true,
                 address: "kodi:9090".to_owned(),
                 launch_at_start: None,
             }),
@@ -40,7 +43,7 @@ fn full() {
                     gamescope: 2457742405,
                     launch: Some(10555923251500941312),
                 },
-                switch: true,
+                show_on_playback: true,
                 server: "snapserver:1705".to_owned(),
                 client: Some("TV".to_owned()),
                 launch_at_start: Some(Duration::from_secs(5)),
@@ -50,7 +53,7 @@ fn full() {
                     gamescope: 3,
                     launch: Some(12918456320),
                 },
-                switch: false,
+                show_on_playback: false,
                 window_class: "Mirror".to_owned(),
                 launch_at_start: Some(Duration::from_secs(DEFAULT_LAUNCH_AT_START_WAIT)),
             }),
@@ -79,26 +82,31 @@ fn launch_at_start() {
             ),
         ]
     );
-    let kodi = "[kodi]\nlaunch = 10375237194288726016\nlaunch_at_start = true";
+    let kodi =
+        "[kodi]\ngamescope_id = 1\nsteam_game_id = 10375237194288726016\nlaunch_at_start = true";
     let config = Config::parse(kodi).unwrap();
     let wait = Duration::from_secs(DEFAULT_LAUNCH_AT_START_WAIT);
     assert_eq!(config.launch_at_start(), [(config.kodi.unwrap().app, wait)]);
     assert_eq!(
-        Config::parse("[kodi]\napp = 1").unwrap().launch_at_start(),
+        Config::parse("[kodi]\ngamescope_id = 1")
+            .unwrap()
+            .launch_at_start(),
         []
     );
 }
 
 #[test]
-fn kodi_can_have_a_launch_id() {
-    let kodi = Config::parse("[kodi]\napp = 2415673154\nlaunch = 10375237194288726016")
+fn ids_are_taken_as_given() {
+    // A Steam game ID whose top 32 bits aren't the gamescope ID: neither is
+    // worked out from, or checked against, the other.
+    let kodi = Config::parse("[kodi]\ngamescope_id = 7\nsteam_game_id = 10375237194288726016")
         .unwrap()
         .kodi
         .unwrap();
     assert_eq!(
         kodi.app,
         App {
-            gamescope: 2415673154,
+            gamescope: 7,
             launch: Some(10375237194288726016),
         }
     );
@@ -106,7 +114,7 @@ fn kodi_can_have_a_launch_id() {
 
 #[test]
 fn minimal_uxplay_takes_the_default_window_class() {
-    let config = Config::parse("[uxplay]\napp = 3").unwrap();
+    let config = Config::parse("[uxplay]\ngamescope_id = 3").unwrap();
     let uxplay = config.uxplay.unwrap();
     assert_eq!(uxplay.app.gamescope, 3);
     assert_eq!(uxplay.window_class, DEFAULT_UXPLAY_WINDOW_CLASS);
@@ -115,31 +123,31 @@ fn minimal_uxplay_takes_the_default_window_class() {
 }
 
 #[test]
-fn without_app_a_table_only_launches_at_start() {
-    let config = Config::parse("[uxplay]\nlaunch = 12918456320\nlaunch_at_start = true").unwrap();
-    let uxplay = config.uxplay.as_ref().unwrap();
-    assert_eq!(uxplay.app.gamescope, 3);
-    assert!(!uxplay.switch);
-    assert_eq!(config.launch_at_start().len(), 1);
-    for ids in ["app = 3", "app = 3\nlaunch = 12918456320"] {
-        let uxplay = Config::parse(&format!("[uxplay]\n{ids}"))
-            .unwrap()
-            .uxplay
-            .unwrap();
-        assert!(uxplay.switch, "{ids}");
+fn show_on_playback_defaults_to_off() {
+    let config = Config::parse("[uxplay]\ngamescope_id = 3").unwrap();
+    assert!(!config.uxplay.unwrap().show_on_playback);
+    let config = Config::parse("[uxplay]\ngamescope_id = 3\nshow_on_playback = true").unwrap();
+    assert!(config.uxplay.unwrap().show_on_playback);
+}
+
+#[test]
+fn a_table_can_do_nothing() {
+    for table in ["[kodi]", "[uxplay]", "[snapcast]\nserver = \"s:1705\""] {
+        let text = format!("{table}\ngamescope_id = 1\nsteam_game_id = 10375237194288726016");
+        assert!(Config::parse(&text).is_ok(), "{text:?}");
     }
 }
 
 #[test]
 fn minimal_kodi_takes_the_default_address() {
-    let config = Config::parse("[kodi]\napp = 1").unwrap();
+    let config = Config::parse("[kodi]\ngamescope_id = 1").unwrap();
     assert_eq!(config.kodi.unwrap().address, DEFAULT_KODI_ADDRESS);
     assert_eq!(config.snapcast, None);
 }
 
 #[test]
 fn minimal_snapcast() {
-    let snapcast = Config::parse("[snapcast]\napp = 2\nserver = \"s:1705\"")
+    let snapcast = Config::parse("[snapcast]\ngamescope_id = 2\nserver = \"s:1705\"")
         .unwrap()
         .snapcast
         .unwrap();
@@ -152,55 +160,62 @@ fn minimal_snapcast() {
 fn errors() {
     let cases = [
         ("", "[kodi], [snapcast] or [uxplay]"),
-        ("[kodi]", "[kodi] needs `app`, `launch`"),
+        ("[kodi]", "gamescope_id"),
         (
-            "[kodi]\napp = 1\nlaunch = 10375237194288726016",
-            "doesn't match",
+            "[kodi]\nsteam_game_id = 10375237194288726016",
+            "gamescope_id",
         ),
-        ("[kodi]\napp = -1", "app"),
+        ("[kodi]\ngamescope_id = -1", "gamescope_id"),
+        ("[kodi]\ngamescope_id = 1\napp = 1", "app"),
+        ("[kodi]\ngamescope_id = 1\nlaunch = 1", "launch"),
+        ("[snapcast]\nserver = \"s:1705\"", "gamescope_id"),
+        ("[snapcast]\ngamescope_id = 2", "server"),
+        ("[snapcast]\ngamescope_id = 2\nserver = \"\"", "server"),
         (
-            "[snapcast]\nserver = \"s:1705\"",
-            "[snapcast] needs `app`, `launch`",
+            "[snapcast]\ngamescope_id = 4294967296\nserver = \"s:1705\"",
+            "gamescope_id",
         ),
-        ("[snapcast]\napp = 2", "server"),
-        ("[snapcast]\napp = 2\nserver = \"\"", "server"),
-        ("[snapcast]\napp = 4294967296\nserver = \"s:1705\"", "app"),
-        ("[kodi]\napp = 1\nport = 9090", "port"),
+        ("[kodi]\ngamescope_id = 1\nport = 9090", "port"),
         (
-            "[kodi]\napp = 1\nlaunch_at_start = true",
-            "[kodi] `launch_at_start` needs `launch`",
+            "[kodi]\ngamescope_id = 1\nshow_on_playback = 1",
+            "show_on_playback",
         ),
         (
-            "[snapcast]\napp = 2\nserver = \"s:1705\"\nlaunch_at_start = true",
-            "[snapcast] `launch_at_start` needs `launch`",
+            "[kodi]\ngamescope_id = 1\nlaunch_at_start = true",
+            "[kodi] `launch_at_start` needs `steam_game_id`",
         ),
-        ("[kodi]\napp = 1\nlaunch_at_start = 1", "launch_at_start"),
-        ("[uxplay]", "[uxplay] needs `app`, `launch`"),
         (
-            "[uxplay]\napp = 3\nwindow_class = \"\"",
+            "[snapcast]\ngamescope_id = 2\nserver = \"s:1705\"\nlaunch_at_start = true",
+            "[snapcast] `launch_at_start` needs `steam_game_id`",
+        ),
+        (
+            "[kodi]\ngamescope_id = 1\nlaunch_at_start = 1",
+            "launch_at_start",
+        ),
+        ("[uxplay]", "gamescope_id"),
+        (
+            "[uxplay]\ngamescope_id = 3\nwindow_class = \"\"",
             "[uxplay] `window_class` is empty",
         ),
         (
-            "[uxplay]\napp = 3\nlaunch_at_start = true",
-            "[uxplay] `launch_at_start` needs `launch`",
+            "[uxplay]\ngamescope_id = 3\nlaunch_at_start = true",
+            "[uxplay] `launch_at_start` needs `steam_game_id`",
         ),
-        ("[uxplay]\napp = 3\nfile = \"~/.uxplay.dacp\"", "file"),
         (
-            "[kodi]\nlaunch = 10375237194288726016\nlaunch_at_start_wait = 5",
+            "[uxplay]\ngamescope_id = 3\nfile = \"~/.uxplay.dacp\"",
+            "file",
+        ),
+        (
+            "[kodi]\ngamescope_id = 1\nsteam_game_id = 10375237194288726016\nlaunch_at_start_wait = 5",
             "[kodi] `launch_at_start_wait` needs `launch_at_start = true`",
         ),
         (
-            "[kodi]\nlaunch = 10375237194288726016\nlaunch_at_start = true\nlaunch_at_start_wait = -1",
+            "[kodi]\ngamescope_id = 1\nsteam_game_id = 10375237194288726016\nlaunch_at_start = true\nlaunch_at_start_wait = -1",
             "launch_at_start_wait",
         ),
-        (
-            "[kodi]\nlaunch = 10375237194288726016",
-            "[kodi] does nothing",
-        ),
-        ("[uxplay]\nlaunch = 12918456320", "[uxplay] does nothing"),
-        ("[kodi]\napp = 1\n[spotify]", "spotify"),
-        ("app = 1", "app"),
-        ("[kodi\napp = 1", "kodi"),
+        ("[kodi]\ngamescope_id = 1\n[spotify]", "spotify"),
+        ("gamescope_id = 1", "gamescope_id"),
+        ("[kodi\ngamescope_id = 1", "kodi"),
     ];
     for (text, needle) in cases {
         let err = Config::parse(text).unwrap_err();
@@ -210,13 +225,20 @@ fn errors() {
 
 #[test]
 fn quiet_others_defaults_to_off() {
-    assert!(!Config::parse("[kodi]\napp = 1").unwrap().quiet_others);
-    let config = Config::parse("quiet_others = true\n[kodi]\napp = 1").unwrap();
+    assert!(
+        !Config::parse("[kodi]\ngamescope_id = 1")
+            .unwrap()
+            .quiet_others
+    );
+    let config = Config::parse("quiet_others = true\n[kodi]\ngamescope_id = 1").unwrap();
     assert!(config.quiet_others);
     for (text, needle) in [
-        ("quiet_others = 1\n[kodi]\napp = 1", "quiet_others"),
+        ("quiet_others = 1\n[kodi]\ngamescope_id = 1", "quiet_others"),
         ("quiet_others = true", "[kodi], [snapcast] or [uxplay]"),
-        ("quiet_other = true\n[kodi]\napp = 1", "quiet_other"),
+        (
+            "quiet_other = true\n[kodi]\ngamescope_id = 1",
+            "quiet_other",
+        ),
     ] {
         let err = Config::parse(text).unwrap_err();
         assert!(err.contains(needle), "{text:?} gave {err:?}");

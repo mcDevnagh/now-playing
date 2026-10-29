@@ -1,34 +1,38 @@
 # now-playing-switcher's config. Copy it to
 # ~/.config/now-playing/switcher.toml and fill in your own values.
 #
-# Each table names one app, by its gamescope ID (`app`), its launch ID
-# (`launch`) or both. The switcher only brings the app to the front if the
-# table gives `app`: with only `launch`, the app can be launched at start (see
-# below) but is never switched to. Without `launch`, the app can be brought to
-# the front but not started. Leave a table out to not follow that player.
+# Each table names one app by its gamescope ID (`gamescope_id`, required) and,
+# to be able to launch it, its Steam game ID (`steam_game_id`). With
+# `show_on_playback = true`, the switcher brings the app to the front when its
+# player starts; without it, the app is never switched to. Without
+# `steam_game_id`, the app can be brought to the front but not started. Leave
+# a table out to not follow that player.
 #
-# Any table can also set `launch_at_start = true`, which needs `launch`: each
-# time Gaming Mode starts, once Steam's UI is up, the switcher launches the
-# app (unless it's already running), waits for it to come to the front, then
-# goes back to Steam's home, leaving it running in the background. An app
-# that opens no window until it's used never comes to the front, so after
-# `launch_at_start_wait` seconds (default 30) it goes home anyway.
+# Any table can also set `launch_at_start = true`, which needs
+# `steam_game_id`: each time Gaming Mode starts, once Steam's UI is up, the
+# switcher launches the app (unless it's already running), waits for it to
+# come to the front, then goes back to Steam's home, leaving it running in
+# the background. An app that opens no window until it's used never comes to
+# the front, so after `launch_at_start_wait` seconds (default 30) it goes
+# home anyway.
 
 # Kodi starts or resumes playback → bring Kodi to the front. Kodi has to be
 # running to play anything, so it never needs launching.
 [kodi]
-app = 1234567890
+gamescope_id = 1234567890
+show_on_playback = true
 # Kodi's JSON-RPC TCP port. This is the default.
 address = "127.0.0.1:9090"
-# To have Kodi running from login, give its launch ID instead of `app`:
-# launch = 5302428712275279872
+# To have Kodi running from login, give its Steam game ID too:
+# steam_game_id = 5302428712275279872
 # launch_at_start = true
 
 # Music starts on this machine's Snapcast client → bring Now Playing to the
 # front, launching it if it isn't running.
 [snapcast]
-app = 2345678901
-launch = 10074614166745776128
+gamescope_id = 2345678901
+steam_game_id = 10074614166745776128
+show_on_playback = true
 # snapserver's JSON-RPC address. Required.
 server = "snapserver:1705"
 # The Snapcast client to follow, by id or host name. Defaults to this
@@ -40,8 +44,9 @@ server = "snapserver:1705"
 # it: set `launch_at_start` to have it running. Audio-only AirPlay opens no
 # window, so it doesn't switch.
 [uxplay]
-app = 3456789012
-launch = 14846795755745705984
+gamescope_id = 3456789012
+steam_game_id = 14846795755745705984
+show_on_playback = true
 launch_at_start = true
 # The WM_CLASS class of UxPlay's video window, which it opens while a device
 # mirrors and closes when it stops. This is the default.

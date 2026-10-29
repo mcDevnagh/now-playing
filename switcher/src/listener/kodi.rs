@@ -22,7 +22,8 @@ use crate::quiet::Player;
 /// resume with `app`, and pauses Kodi when `inbox` is asked to.
 pub struct Kodi {
     pub address: String,
-    /// The app to show on a start; `None` if the table doesn't switch.
+    /// The app to show on a start; `None` without
+    /// `show_on_playback`.
     pub app: Option<App>,
     pub inbox: Inbox,
 }

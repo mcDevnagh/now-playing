@@ -9,16 +9,19 @@ fn listeners(config: &str) -> (usize, (bool, bool)) {
 
 const TABLES: &str = r#"
     [kodi]
-    launch = 10375237194288726016
+    gamescope_id = 1
+    steam_game_id = 10375237194288726016
     launch_at_start = true
 
     [snapcast]
-    app = 2
+    gamescope_id = 2
+    show_on_playback = true
     server = "s:1705"
     client = "htpc"
 
     [uxplay]
-    app = 3
+    gamescope_id = 3
+    show_on_playback = true
 "#;
 
 #[test]
@@ -34,6 +37,6 @@ fn with_quiet_others_every_table_listens() {
 
 #[test]
 fn quiet_others_reaches_only_the_tables_given() {
-    let config = "quiet_others = true\n[uxplay]\napp = 3\n[kodi]\napp = 1";
+    let config = "quiet_others = true\n[uxplay]\ngamescope_id = 3\n[kodi]\ngamescope_id = 1";
     assert_eq!(listeners(config), (2, (true, false)));
 }

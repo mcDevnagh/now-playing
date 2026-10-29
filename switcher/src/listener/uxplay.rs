@@ -17,7 +17,8 @@ use crate::{steam, windows};
 pub struct Uxplay {
     pub window_class: String,
     pub gamescope: u32,
-    /// The app to show on a start; `None` if the table doesn't switch.
+    /// The app to show on a start; `None` without
+    /// `show_on_playback`.
     pub app: Option<App>,
 }
 
@@ -27,7 +28,7 @@ impl Listener for Uxplay {
     fn run(self: Box<Self>, requests: Sender<Request>) -> ! {
         let class = &self.window_class;
         // A cast means UxPlay is running, and launching a running app makes
-        // Steam show an error, so it's asked for without its launch ID.
+        // Steam show an error, so it's asked for without its Steam game ID.
         let app = self.app.map(without_launch);
         let mut backoff = Backoff::new();
         let mut quiet = false;
@@ -67,7 +68,7 @@ impl Listener for Uxplay {
     }
 }
 
-/// `app` without its launch ID, so showing it can't launch it.
+/// `app` without its Steam game ID, so showing it can't launch it.
 fn without_launch(app: App) -> App {
     App {
         launch: None,

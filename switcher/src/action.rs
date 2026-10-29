@@ -30,9 +30,9 @@ enum Decision {
     AlreadyInFront,
     /// Running behind something else: bring it to the front.
     Focus,
-    /// Not running: launch it with this launch ID.
+    /// Not running: launch it with this Steam game ID.
     Launch(u64),
-    /// Not running, and no launch ID to start it.
+    /// Not running, and no Steam game ID to start it.
     CantLaunch,
 }
 
@@ -45,7 +45,7 @@ enum StartDecision {
     /// the screen alone.
     AlreadyRunning,
     Launch(u64),
-    /// Not running, and no launch ID to start it.
+    /// Not running, and no Steam game ID to start it.
     CantLaunch,
 }
 
@@ -114,7 +114,7 @@ fn show(app: App, gamescope: &Gamescope, front: u32, dry_run: bool) {
             Err(e) => eprintln!("switcher: {app}: couldn't launch {id} ({e})"),
         },
         Ok(Decision::CantLaunch) => {
-            eprintln!("switcher: {app}: not running, and no launch ID to start it")
+            eprintln!("switcher: {app}: not running, and no Steam game ID to start it")
         }
         Err(e) => eprintln!("switcher: {app}: skipped ({e})"),
     }
@@ -149,7 +149,7 @@ fn launch_in_gaming_mode(app: App, wait: Duration, display: &str, dry_run: bool)
             )
         }
         Ok(StartDecision::CantLaunch) => {
-            eprintln!("switcher: {app}: not launched at start (no launch ID)")
+            eprintln!("switcher: {app}: not launched at start (no Steam game ID)")
         }
         Err(e) => eprintln!("switcher: {app}: not launched at start ({e})"),
     }

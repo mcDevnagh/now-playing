@@ -31,9 +31,8 @@ pub struct Config {
 #[serde(try_from = "RawKodi")]
 pub struct Kodi {
     pub app: App,
-    /// Bring the app to the front when the player starts: only if the table
-    /// gives `app`.
-    pub switch: bool,
+    /// Bring the app to the front when the player starts.
+    pub show_on_playback: bool,
     /// Kodi's JSON-RPC TCP address.
     pub address: String,
     /// Launch the app each time Gaming Mode starts, then go home once it's in
@@ -46,9 +45,8 @@ pub struct Kodi {
 #[serde(try_from = "RawSnapcast")]
 pub struct Snapcast {
     pub app: App,
-    /// Bring the app to the front when the player starts: only if the table
-    /// gives `app`.
-    pub switch: bool,
+    /// Bring the app to the front when the player starts.
+    pub show_on_playback: bool,
     /// snapserver's JSON-RPC address.
     pub server: String,
     /// The client to follow [default: this machine's hostname].
@@ -64,9 +62,8 @@ pub struct Snapcast {
 #[serde(try_from = "RawUxplay")]
 pub struct Uxplay {
     pub app: App,
-    /// Bring the app to the front when the player starts: only if the table
-    /// gives `app`.
-    pub switch: bool,
+    /// Bring the app to the front when the player starts.
+    pub show_on_playback: bool,
     /// The `WM_CLASS` class of UxPlay's video window.
     pub window_class: String,
     /// Launch the app each time Gaming Mode starts, then go home once it's in
@@ -78,8 +75,10 @@ pub struct Uxplay {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawKodi {
-    app: Option<u32>,
-    launch: Option<u64>,
+    gamescope_id: u32,
+    steam_game_id: Option<u64>,
+    #[serde(default)]
+    show_on_playback: bool,
     address: Option<String>,
     #[serde(default)]
     launch_at_start: bool,
@@ -90,8 +89,10 @@ struct RawKodi {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawSnapcast {
-    app: Option<u32>,
-    launch: Option<u64>,
+    gamescope_id: u32,
+    steam_game_id: Option<u64>,
+    #[serde(default)]
+    show_on_playback: bool,
     server: String,
     client: Option<String>,
     #[serde(default)]
@@ -103,8 +104,10 @@ struct RawSnapcast {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawUxplay {
-    app: Option<u32>,
-    launch: Option<u64>,
+    gamescope_id: u32,
+    steam_game_id: Option<u64>,
+    #[serde(default)]
+    show_on_playback: bool,
     window_class: Option<String>,
     #[serde(default)]
     launch_at_start: bool,
@@ -115,13 +118,15 @@ impl TryFrom<RawKodi> for Kodi {
     type Error = String;
 
     fn try_from(raw: RawKodi) -> Result<Self, String> {
-        let app = App::new(raw.app, raw.launch).map_err(|e| format!("[kodi] {e}"))?;
+        let app = App {
+            gamescope: raw.gamescope_id,
+            launch: raw.steam_game_id,
+        };
         let launch_at_start =
             launch_at_start("kodi", app, raw.launch_at_start, raw.launch_at_start_wait)?;
-        let switch = switch_or_launch("kodi", raw.app, launch_at_start)?;
         Ok(Self {
             app,
-            switch,
+            show_on_playback: raw.show_on_playback,
             address: raw
                 .address
                 .unwrap_or_else(|| DEFAULT_KODI_ADDRESS.to_owned()),
@@ -137,17 +142,19 @@ impl TryFrom<RawSnapcast> for Snapcast {
         if raw.server.is_empty() {
             return Err("[snapcast] `server` is empty".to_owned());
         }
-        let app = App::new(raw.app, raw.launch).map_err(|e| format!("[snapcast] {e}"))?;
+        let app = App {
+            gamescope: raw.gamescope_id,
+            launch: raw.steam_game_id,
+        };
         let launch_at_start = launch_at_start(
             "snapcast",
             app,
             raw.launch_at_start,
             raw.launch_at_start_wait,
         )?;
-        let switch = switch_or_launch("snapcast", raw.app, launch_at_start)?;
         Ok(Self {
             app,
-            switch,
+            show_on_playback: raw.show_on_playback,
             server: raw.server,
             client: raw.client,
             launch_at_start,
@@ -162,13 +169,15 @@ impl TryFrom<RawUxplay> for Uxplay {
         if raw.window_class.as_deref() == Some("") {
             return Err("[uxplay] `window_class` is empty".to_owned());
         }
-        let app = App::new(raw.app, raw.launch).map_err(|e| format!("[uxplay] {e}"))?;
+        let app = App {
+            gamescope: raw.gamescope_id,
+            launch: raw.steam_game_id,
+        };
         let launch_at_start =
             launch_at_start("uxplay", app, raw.launch_at_start, raw.launch_at_start_wait)?;
-        let switch = switch_or_launch("uxplay", raw.app, launch_at_start)?;
         Ok(Self {
             app,
-            switch,
+            show_on_playback: raw.show_on_playback,
             window_class: raw
                 .window_class
                 .unwrap_or_else(|| DEFAULT_UXPLAY_WINDOW_CLASS.to_owned()),
@@ -177,23 +186,8 @@ impl TryFrom<RawUxplay> for Uxplay {
     }
 }
 
-/// Whether a table switches to its app: only if it gives `app`. A table
-/// that neither switches nor launches at start would do nothing.
-fn switch_or_launch(
-    table: &str,
-    app: Option<u32>,
-    launch_at_start: Option<Duration>,
-) -> Result<bool, String> {
-    if app.is_none() && launch_at_start.is_none() {
-        return Err(format!(
-            "[{table}] does nothing: needs `app` to switch to it, or `launch_at_start`"
-        ));
-    }
-    Ok(app.is_some())
-}
-
 /// A table's `launch_at_start` and `launch_at_start_wait`, checked:
-/// launching needs a launch ID, and the wait is only for launching.
+/// launching needs a Steam game ID, and the wait is only for launching.
 fn launch_at_start(
     table: &str,
     app: App,
@@ -202,7 +196,7 @@ fn launch_at_start(
 ) -> Result<Option<Duration>, String> {
     match (launch_at_start, wait) {
         (true, _) if app.launch.is_none() => {
-            Err(format!("[{table}] `launch_at_start` needs `launch`"))
+            Err(format!("[{table}] `launch_at_start` needs `steam_game_id`"))
         }
         (true, wait) => Ok(Some(Duration::from_secs(
             wait.unwrap_or(DEFAULT_LAUNCH_AT_START_WAIT),
