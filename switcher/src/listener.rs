@@ -37,9 +37,12 @@ pub fn from_config(config: &Config) -> Result<Vec<Box<dyn Listener>>, String> {
         }));
     }
     if let Some(table) = config.kodi.as_ref().filter(|t| t.switch) {
+        // Nothing pauses Kodi yet.
+        let (_, inbox) = kodi::channel();
         listeners.push(Box::new(kodi::Kodi {
             address: table.address.clone(),
             app: table.app,
+            inbox,
         }));
     }
     if let Some(table) = config.uxplay.as_ref().filter(|t| t.switch) {
