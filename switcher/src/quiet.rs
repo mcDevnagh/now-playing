@@ -34,8 +34,10 @@ impl fmt::Display for Player {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Quiet {
     PauseKodi,
-    /// Sets our Snapcast client's mute: `true` mutes it, `false` unmutes it.
-    MuteSnapcast(bool),
+    /// Mute our Snapcast client.
+    MuteSnapcast,
+    /// Unmute our Snapcast client.
+    UnmuteSnapcast,
 }
 
 impl Quiet {
@@ -44,10 +46,10 @@ impl Quiet {
         match (self, dry_run) {
             (Quiet::PauseKodi, false) => "pausing kodi",
             (Quiet::PauseKodi, true) => "pause kodi",
-            (Quiet::MuteSnapcast(true), false) => "muting snapcast",
-            (Quiet::MuteSnapcast(true), true) => "mute snapcast",
-            (Quiet::MuteSnapcast(false), false) => "unmuting snapcast",
-            (Quiet::MuteSnapcast(false), true) => "unmute snapcast",
+            (Quiet::MuteSnapcast, false) => "muting snapcast",
+            (Quiet::MuteSnapcast, true) => "mute snapcast",
+            (Quiet::UnmuteSnapcast, false) => "unmuting snapcast",
+            (Quiet::UnmuteSnapcast, true) => "unmute snapcast",
         }
     }
 }
@@ -85,24 +87,24 @@ impl Others {
         for quiet in quiets {
             match quiet {
                 Quiet::PauseKodi => self.kodi.iter().for_each(kodi::Controller::pause),
-                Quiet::MuteSnapcast(muted) => self.snapcast.iter().for_each(|s| s.set_muted(muted)),
+                Quiet::MuteSnapcast => self.snapcast.iter().for_each(|s| s.set_muted(true)),
+                Quiet::UnmuteSnapcast => self.snapcast.iter().for_each(|s| s.set_muted(false)),
             }
         }
     }
 
     /// What starting `started` does, to the players we can reach.
     fn quiets(&self, started: Player) -> Vec<Quiet> {
-        let (pause_kodi, mute_snapcast) = match started {
-            Player::Kodi => (false, true),
-            Player::Snapcast => (true, false),
-            Player::Uxplay => (true, true),
+        let quiets: &[Quiet] = match started {
+            Player::Kodi => &[Quiet::MuteSnapcast],
+            Player::Snapcast => &[Quiet::PauseKodi, Quiet::UnmuteSnapcast],
+            Player::Uxplay => &[Quiet::PauseKodi, Quiet::MuteSnapcast],
         };
-        let pause = (pause_kodi && self.kodi.is_some()).then_some(Quiet::PauseKodi);
-        let mute = self
-            .snapcast
-            .is_some()
-            .then_some(Quiet::MuteSnapcast(mute_snapcast));
-        pause.into_iter().chain(mute).collect()
+        let reaches = |quiet: &&Quiet| match quiet {
+            Quiet::PauseKodi => self.kodi.is_some(),
+            Quiet::MuteSnapcast | Quiet::UnmuteSnapcast => self.snapcast.is_some(),
+        };
+        quiets.iter().filter(reaches).copied().collect()
     }
 }
 
