@@ -189,6 +189,25 @@ fn only_our_get_active_players_replies_pause() {
 }
 
 #[test]
+fn only_the_latest_pause_is_answered() {
+    let got = written(vec![
+        Input::Pause,
+        Input::Pause,
+        // Replaced by the second.
+        reply(1, players(&[1])),
+        reply(2, players(&[1])),
+    ]);
+    assert_eq!(
+        got,
+        [
+            get_active_players(1),
+            get_active_players(2),
+            play_pause(3, 1)
+        ]
+    );
+}
+
+#[test]
 fn pauses_and_starts_together() {
     let mut follow = Follow::new(1, Vec::new());
     let mut starts = 0;

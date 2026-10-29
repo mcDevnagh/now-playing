@@ -187,8 +187,10 @@ struct Follow<W> {
     out: W,
     /// The last request id used.
     id: u64,
-    /// The ids of `Player.GetActivePlayers` requests not yet answered.
-    asked: Vec<u64>,
+    /// The id of the latest `Player.GetActivePlayers`, until it's
+    /// answered. A newer one replaces it: its reply pauses the same players,
+    /// so only one is needed.
+    asked: Option<u64>,
 }
 
 impl<W: Write> Follow<W> {
@@ -197,7 +199,7 @@ impl<W: Write> Follow<W> {
             connection,
             out,
             id: 0,
-            asked: Vec::new(),
+            asked: None,
         }
     }
 
@@ -225,7 +227,7 @@ impl<W: Write> Follow<W> {
                     "method": "Player.GetActivePlayers",
                 });
                 writeln!(self.out, "{request}")?;
-                self.asked.push(self.id);
+                self.asked = Some(self.id);
             }
         }
         Ok(())
@@ -238,11 +240,10 @@ impl<W: Write> Follow<W> {
         }
         // Only replies have an id.
         let id = &message["id"];
-        let asked = id
-            .as_u64()
-            .and_then(|id| self.asked.iter().position(|&asked| asked == id))
-            .map(|i| self.asked.swap_remove(i))
-            .is_some();
+        let asked = id.as_u64().is_some_and(|id| self.asked == Some(id));
+        if asked {
+            self.asked = None;
+        }
         if let Some(error) = message.get("error") {
             eprintln!("kodi: error reply to request {id}: {error}");
             return Ok(());
