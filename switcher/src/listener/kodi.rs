@@ -29,11 +29,7 @@ impl Listener for Kodi {
     /// Kodi often isn't running, so a refused connection is normal: only the
     /// first failure of each outage is logged.
     fn run(&mut self, show: Sender<Request>) -> ! {
-        let Kodi {
-            address,
-            app,
-            inbox,
-        } = self;
+        let address = &self.address;
         let mut backoff = Backoff::new();
         let mut quiet = false;
         let mut connection = 0;
@@ -43,10 +39,10 @@ impl Listener for Kodi {
                     eprintln!("kodi: connected to {address}");
                     backoff.reset();
                     connection += 1;
-                    let result = follow(stream, connection, inbox, &mut || {
+                    let result = follow(stream, connection, &self.inbox, &mut || {
                         eprintln!("kodi: playback started");
                         // The dispatch loop outlives the listeners.
-                        let _ = show.send(Request::Show(*app));
+                        let _ = show.send(Request::Show(self.app));
                     });
                     let reason = result.err().map_or("closed".to_owned(), |e| e.to_string());
                     eprintln!("kodi: {address}: disconnected ({reason}); retrying quietly");
