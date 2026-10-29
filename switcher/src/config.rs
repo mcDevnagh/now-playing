@@ -17,6 +17,10 @@ const DEFAULT_LAUNCH_AT_START_WAIT: u64 = 30;
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    /// A player starting quiets the others: Kodi is paused, and our
+    /// Snapcast client muted.
+    #[serde(default)]
+    pub quiet_others: bool,
     pub kodi: Option<Kodi>,
     pub snapcast: Option<Snapcast>,
     pub uxplay: Option<Uxplay>,

@@ -1,18 +1,21 @@
-//! Showing an app: focus it if it's running, launch it if not. And
-//! launching apps at start, to wait in the background.
+//! A player starting: quiet the others, and show its app: focus it if it's
+//! running, launch it if not. And launching apps at start, to wait in the
+//! background.
 
 use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::app::App;
 use crate::gamescope::Gamescope;
+use crate::quiet::{Others, Player};
 use crate::steam;
 
 /// What the dispatch loop is asked to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Request {
-    /// Bring the app to the front, launching it if it isn't running.
-    Show(App),
+    /// A player started: quiet the others, and bring `app` to the front,
+    /// launching it if it isn't running, if its table switches to it.
+    Started { player: Player, app: Option<App> },
     /// Launch the app if it isn't running, then go back to Steam's home, so
     /// it waits in the background: once it's in front, or after the wait.
     LaunchAtStart(App, Duration),
@@ -56,31 +59,43 @@ const START_CHECK: Duration = Duration::from_millis(250);
 /// How long a launched app has to start before asking Steam again.
 const LAUNCH_RETRY: Duration = Duration::from_secs(5);
 
-/// Carries out `request` on `display`, logging what it did. With `dry_run`,
-/// it only logs what it would do.
-pub fn handle(request: Request, display: &str, dry_run: bool) {
+/// Carries out `request` on `display`, quieting `others` for a start,
+/// logging what it did. With `dry_run`, it only logs what it would do.
+pub fn handle(request: Request, others: &Others, display: &str, dry_run: bool) {
     match request {
-        Request::Show(app) => show(app, display, dry_run),
+        Request::Started { player, app } => started(player, app, others, display, dry_run),
         Request::LaunchAtStart(app, wait) => launch_at_start(app, wait, display, dry_run),
     }
 }
 
-/// Brings `app` to the front on `display`.
-fn show(app: App, display: &str, dry_run: bool) {
-    let gamescope = match Gamescope::connect(display) {
-        Ok(gamescope) => gamescope,
-        Err(e) => return eprintln!("switcher: {app}: skipped ({e})"),
+/// `player` started: in Gaming Mode only, quiets `others`, then brings
+/// `app` to the front.
+fn started(player: Player, app: Option<App>, others: &Others, display: &str, dry_run: bool) {
+    let who = app.map_or_else(|| player.to_string(), |app| app.to_string());
+    let front =
+        Gamescope::connect(display).and_then(|gamescope| Ok((gamescope.focused_app()?, gamescope)));
+    let (front, gamescope) = match front {
+        Ok((Some(front), gamescope)) => (front, gamescope),
+        Ok((None, _)) => return eprintln!("switcher: {who}: skipped (not in Gaming Mode)"),
+        Err(e) => return eprintln!("switcher: {who}: skipped ({e})"),
     };
-    let decision = gamescope.focused_app().and_then(|front| {
-        decide(app, front, || {
-            steam::is_running(app.gamescope).map_err(|e| format!("/proc: {e}"))
-        })
+    // First, so the sound stops before switching settles.
+    others.started(player, dry_run);
+    if let Some(app) = app {
+        show(app, &gamescope, front, dry_run);
+    }
+}
+
+/// Brings `app` to the front, given gamescope and the app in front.
+fn show(app: App, gamescope: &Gamescope, front: u32, dry_run: bool) {
+    let decision = decide(app, Some(front), || {
+        steam::is_running(app.gamescope).map_err(|e| format!("/proc: {e}"))
     });
     match decision {
         Ok(Decision::NotGamingMode) => eprintln!("switcher: {app}: skipped (not in Gaming Mode)"),
         Ok(Decision::AlreadyInFront) => eprintln!("switcher: {app}: already in front"),
         Ok(Decision::Focus) if dry_run => eprintln!("switcher: {app}: dry run: would focus it"),
-        Ok(Decision::Focus) => eprintln!("switcher: {app}: {}", focus(&gamescope, app.gamescope)),
+        Ok(Decision::Focus) => eprintln!("switcher: {app}: {}", focus(gamescope, app.gamescope)),
         Ok(Decision::Launch(id)) if dry_run => {
             eprintln!("switcher: {app}: dry run: would launch {id}")
         }

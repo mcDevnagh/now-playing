@@ -1,32 +1,45 @@
-//! Follows our Snapcast client, asking for its app when it starts playing.
+//! Follows our Snapcast client, reporting when it starts playing, and mutes
+//! or unmutes it when asked.
 
 use std::sync::mpsc::Sender;
 
-use now_playing_core::snapcast::{self, Stream};
+use now_playing_core::snapcast::{self, Inbox, Stream};
 use now_playing_core::state::{State, now_playing};
 
 use super::Listener;
 use crate::action::Request;
 use crate::app::App;
+use crate::quiet::Player;
 
-/// Follows `client` on the snapserver at `server`, asking for `app` whenever
-/// the client starts playing.
+/// Follows `client` on the snapserver at `server`, reporting with `app`
+/// whenever the client starts playing, and sending it the mutes that arrive
+/// in `inbox`.
 pub struct Snapcast {
     pub server: String,
     pub client: String,
-    pub app: App,
+    /// The app to show on a start; `None` if the table doesn't switch.
+    pub app: Option<App>,
+    pub inbox: Inbox,
 }
 
 impl Listener for Snapcast {
-    fn run(&mut self, show: Sender<Request>) -> ! {
-        let client = &self.client;
-        eprintln!("snapcast: following client {client} on {}", self.server);
+    fn run(self: Box<Self>, requests: Sender<Request>) -> ! {
+        let Snapcast {
+            server,
+            client,
+            app,
+            inbox,
+        } = *self;
+        eprintln!("snapcast: following client {client} on {server}");
         let mut edges = SnapcastEdges::default();
-        snapcast::run(&self.server, client, |stream| {
+        snapcast::run_with_controller(&server, &client, inbox, |stream| {
             if edges.update(playing(stream)) {
                 eprintln!("snapcast: client {client} started playing");
                 // The dispatch loop outlives the listeners.
-                let _ = show.send(Request::Show(self.app));
+                let _ = requests.send(Request::Started {
+                    player: Player::Snapcast,
+                    app,
+                });
             }
         })
     }

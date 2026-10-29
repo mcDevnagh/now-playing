@@ -25,6 +25,7 @@ fn full() {
     assert_eq!(
         config,
         Config {
+            quiet_others: false,
             kodi: Some(Kodi {
                 app: App {
                     gamescope: 1,
@@ -202,6 +203,21 @@ fn errors() {
         ("[kodi\napp = 1", "kodi"),
     ];
     for (text, needle) in cases {
+        let err = Config::parse(text).unwrap_err();
+        assert!(err.contains(needle), "{text:?} gave {err:?}");
+    }
+}
+
+#[test]
+fn quiet_others_defaults_to_off() {
+    assert!(!Config::parse("[kodi]\napp = 1").unwrap().quiet_others);
+    let config = Config::parse("quiet_others = true\n[kodi]\napp = 1").unwrap();
+    assert!(config.quiet_others);
+    for (text, needle) in [
+        ("quiet_others = 1\n[kodi]\napp = 1", "quiet_others"),
+        ("quiet_others = true", "[kodi], [snapcast] or [uxplay]"),
+        ("quiet_other = true\n[kodi]\napp = 1", "quiet_other"),
+    ] {
         let err = Config::parse(text).unwrap_err();
         assert!(err.contains(needle), "{text:?} gave {err:?}");
     }

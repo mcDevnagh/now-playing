@@ -1,4 +1,4 @@
-//! Follows UxPlay's video window, asking for UxPlay when it opens: UxPlay
+//! Follows UxPlay's video window, reporting a start when it opens: UxPlay
 //! opens it when a device starts mirroring, and closes it when it stops.
 
 use std::sync::mpsc::Sender;
@@ -9,27 +9,30 @@ use now_playing_core::net::Backoff;
 use super::Listener;
 use crate::action::Request;
 use crate::app::App;
+use crate::quiet::Player;
 use crate::{steam, windows};
 
-/// Follows windows of class `window_class` on UxPlay's display, asking for
-/// `app` whenever one opens.
+/// Follows windows of class `window_class` on the display of the app with
+/// gamescope ID `gamescope`, reporting with `app` whenever one opens.
 pub struct Uxplay {
     pub window_class: String,
-    pub app: App,
+    pub gamescope: u32,
+    /// The app to show on a start; `None` if the table doesn't switch.
+    pub app: Option<App>,
 }
 
 impl Listener for Uxplay {
     /// UxPlay often isn't running, as outside Gaming Mode, so only the first
     /// failure of each outage is logged.
-    fn run(&mut self, show: Sender<Request>) -> ! {
+    fn run(self: Box<Self>, requests: Sender<Request>) -> ! {
         let class = &self.window_class;
         // A cast means UxPlay is running, and launching a running app makes
         // Steam show an error, so it's asked for without its launch ID.
-        let app = without_launch(self.app);
+        let app = self.app.map(without_launch);
         let mut backoff = Backoff::new();
         let mut quiet = false;
         loop {
-            let reason = match steam::display_of(app.gamescope) {
+            let reason = match steam::display_of(self.gamescope) {
                 Ok(display) => {
                     let mut edges = UxplayEdges::default();
                     let reason = windows::follow(&display, class, |open| {
@@ -42,7 +45,10 @@ impl Listener for Uxplay {
                             Some(true) => {
                                 eprintln!("uxplay: mirroring started");
                                 // The dispatch loop outlives the listeners.
-                                let _ = show.send(Request::Show(app));
+                                let _ = requests.send(Request::Started {
+                                    player: Player::Uxplay,
+                                    app,
+                                });
                             }
                             Some(false) => eprintln!("uxplay: mirroring stopped"),
                             None => {}

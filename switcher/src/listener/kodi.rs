@@ -16,19 +16,21 @@ use serde_json::{Value, json};
 use super::Listener;
 use crate::action::Request;
 use crate::app::App;
+use crate::quiet::Player;
 
-/// Follows Kodi's JSON-RPC TCP port at `address`, asking for `app` on each
-/// play or resume, and pauses Kodi when `inbox` is asked to.
+/// Follows Kodi's JSON-RPC TCP port at `address`, reporting each play or
+/// resume with `app`, and pauses Kodi when `inbox` is asked to.
 pub struct Kodi {
     pub address: String,
-    pub app: App,
+    /// The app to show on a start; `None` if the table doesn't switch.
+    pub app: Option<App>,
     pub inbox: Inbox,
 }
 
 impl Listener for Kodi {
     /// Kodi often isn't running, so a refused connection is normal: only the
     /// first failure of each outage is logged.
-    fn run(&mut self, show: Sender<Request>) -> ! {
+    fn run(self: Box<Self>, requests: Sender<Request>) -> ! {
         let address = &self.address;
         let mut backoff = Backoff::new();
         let mut quiet = false;
@@ -42,7 +44,10 @@ impl Listener for Kodi {
                     let result = follow(stream, connection, &self.inbox, &mut || {
                         eprintln!("kodi: playback started");
                         // The dispatch loop outlives the listeners.
-                        let _ = show.send(Request::Show(self.app));
+                        let _ = requests.send(Request::Started {
+                            player: Player::Kodi,
+                            app: self.app,
+                        });
                     });
                     let reason = result.err().map_or("closed".to_owned(), |e| e.to_string());
                     eprintln!("kodi: {address}: disconnected ({reason}); retrying quietly");
@@ -67,26 +72,14 @@ enum Input {
     /// From the reader thread: the socket closed or failed.
     Closed { connection: u64, error: io::Error },
     /// From the dispatch loop, through a `Controller`.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the dispatch loop doesn't pause Kodi yet")
-    )]
     Pause,
 }
 
 /// What other threads hold to ask the connection to do things: for now only
 /// pause. It can't fake a message.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the dispatch loop doesn't pause Kodi yet")
-)]
 #[derive(Clone)]
 pub struct Controller(Sender<Input>);
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the dispatch loop doesn't pause Kodi yet")
-)]
 impl Controller {
     /// Asks the connection to pause every active player. Never blocks; does
     /// nothing once the connection thread has gone.
@@ -104,6 +97,13 @@ pub struct Inbox {
 }
 
 impl Inbox {
+    /// Takes the pauses waiting, returning how many there were.
+    #[cfg(test)]
+    pub fn take_pauses(&self) -> usize {
+        let inputs = self.rx.try_iter();
+        inputs.filter(|input| matches!(input, Input::Pause)).count()
+    }
+
     /// Drops everything waiting: pauses asked for while Kodi was closed,
     /// and anything left from an old connection.
     fn discard_queued(&self) {

@@ -1,11 +1,13 @@
 //! Brings Now Playing, Kodi or UxPlay to the front in Steam Gaming Mode when
-//! they start playing, or a device starts mirroring to UxPlay.
+//! they start playing, or a device starts mirroring to UxPlay, and can quiet
+//! the others when one does.
 
 mod action;
 mod app;
 mod config;
 mod gamescope;
 mod listener;
+mod quiet;
 mod startup;
 mod steam;
 mod windows;
@@ -39,7 +41,7 @@ fn main() -> ExitCode {
     };
     let loaded = Config::load(&path)
         .and_then(|config| Ok((listener::from_config(&config)?, config.launch_at_start())));
-    let (listeners, at_start) = match loaded {
+    let ((listeners, others), at_start) = match loaded {
         Ok(loaded) => loaded,
         Err(e) => {
             eprintln!("switcher: {e}");
@@ -48,7 +50,7 @@ fn main() -> ExitCode {
     };
 
     let (show, requests) = mpsc::channel();
-    for mut listener in listeners {
+    for listener in listeners {
         let show = show.clone();
         thread::spawn(move || listener.run(show));
     }
@@ -60,7 +62,7 @@ fn main() -> ExitCode {
         thread::spawn(move || startup::run(at_start, &display, show));
     }
     for request in requests {
-        action::handle(request, &display, args.dry_run);
+        action::handle(request, &others, &display, args.dry_run);
     }
     unreachable!("the channel's sender is kept alive by `show`")
 }

@@ -1,5 +1,5 @@
-//! Listeners: each follows one player on its own thread, and asks for its
-//! app to be shown when that player starts.
+//! Listeners: each follows one player on its own thread, and reports when
+//! that player starts.
 
 pub mod kodi;
 pub mod snapcast;
@@ -7,49 +7,66 @@ pub mod uxplay;
 
 use std::sync::mpsc::Sender;
 
-use now_playing_core::hostname;
+use now_playing_core::{hostname, snapcast as core_snapcast};
 
 use crate::action::Request;
 use crate::config::Config;
+use crate::quiet::Others;
 
-/// Follows a player, sending [`Request::Show`] with its app on `show`
-/// whenever the app should come to the front. Holds everything it needs, such as addresses; the
-/// rules for when to ask are its own.
+/// Follows a player, sending [`Request::Started`] on `requests` whenever it
+/// starts. Holds everything it needs, such as addresses; the rules for what
+/// counts as a start are its own.
 pub trait Listener: Send {
     /// Runs forever, reconnecting as needed.
-    fn run(&mut self, show: Sender<Request>) -> !;
+    fn run(self: Box<Self>, requests: Sender<Request>) -> !;
 }
 
-/// The listeners `config` asks for: one per table that gives `app`.
-pub fn from_config(config: &Config) -> Result<Vec<Box<dyn Listener>>, String> {
+/// The listeners `config` asks for, and what their starts do to each other.
+///
+/// Without `quiet_others`, there's one listener per table that gives `app`,
+/// and `Others` is empty. With it, every table gets a listener, since a
+/// table with only `launch` still names a player to quiet and be quieted
+/// by; its listener's `app` is `None`.
+pub fn from_config(config: &Config) -> Result<(Vec<Box<dyn Listener>>, Others), String> {
+    let quiet = config.quiet_others;
     let mut listeners: Vec<Box<dyn Listener>> = Vec::new();
-    if let Some(table) = config.snapcast.as_ref().filter(|t| t.switch) {
+    let mut kodi_controller = None;
+    let mut snapcast_controller = None;
+    if let Some(table) = config.snapcast.as_ref().filter(|t| t.switch || quiet) {
         let client = match &table.client {
             Some(client) => client.clone(),
             None => {
                 hostname().map_err(|e| format!("no snapcast.client given and no hostname: {e}"))?
             }
         };
+        let (controller, inbox) = core_snapcast::channel();
+        snapcast_controller = quiet.then_some(controller);
         listeners.push(Box::new(snapcast::Snapcast {
             server: table.server.clone(),
             client,
-            app: table.app,
-        }));
-    }
-    if let Some(table) = config.kodi.as_ref().filter(|t| t.switch) {
-        // Nothing pauses Kodi yet.
-        let (_, inbox) = kodi::channel();
-        listeners.push(Box::new(kodi::Kodi {
-            address: table.address.clone(),
-            app: table.app,
+            app: table.switch.then_some(table.app),
             inbox,
         }));
     }
-    if let Some(table) = config.uxplay.as_ref().filter(|t| t.switch) {
-        listeners.push(Box::new(uxplay::Uxplay {
-            window_class: table.window_class.clone(),
-            app: table.app,
+    if let Some(table) = config.kodi.as_ref().filter(|t| t.switch || quiet) {
+        let (controller, inbox) = kodi::channel();
+        kodi_controller = quiet.then_some(controller);
+        listeners.push(Box::new(kodi::Kodi {
+            address: table.address.clone(),
+            app: table.switch.then_some(table.app),
+            inbox,
         }));
     }
-    Ok(listeners)
+    if let Some(table) = config.uxplay.as_ref().filter(|t| t.switch || quiet) {
+        listeners.push(Box::new(uxplay::Uxplay {
+            window_class: table.window_class.clone(),
+            gamescope: table.app.gamescope,
+            app: table.switch.then_some(table.app),
+        }));
+    }
+    let others = Others::new(kodi_controller, snapcast_controller);
+    Ok((listeners, others))
 }
+
+#[cfg(test)]
+mod tests;
