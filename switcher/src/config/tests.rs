@@ -28,13 +28,13 @@ fn full() {
     assert_eq!(
         config,
         Config {
-            quiet_others: false,
             kodi: Some(Kodi {
                 app: App {
                     gamescope: 1,
                     launch: None,
                 },
                 show_on_playback: true,
+                quiet_others: false,
                 address: "kodi:9090".to_owned(),
                 launch_at_start: None,
             }),
@@ -44,6 +44,7 @@ fn full() {
                     launch: Some(10555923251500941312),
                 },
                 show_on_playback: true,
+                quiet_others: false,
                 server: "snapserver:1705".to_owned(),
                 client: Some("TV".to_owned()),
                 launch_at_start: Some(Duration::from_secs(5)),
@@ -54,6 +55,7 @@ fn full() {
                     launch: Some(12918456320),
                 },
                 show_on_playback: false,
+                quiet_others: false,
                 window_class: "Mirror".to_owned(),
                 launch_at_start: Some(Duration::from_secs(DEFAULT_LAUNCH_AT_START_WAIT)),
             }),
@@ -224,20 +226,19 @@ fn errors() {
 }
 
 #[test]
-fn quiet_others_defaults_to_off() {
-    assert!(
-        !Config::parse("[kodi]\ngamescope_id = 1")
-            .unwrap()
-            .quiet_others
-    );
-    let config = Config::parse("quiet_others = true\n[kodi]\ngamescope_id = 1").unwrap();
-    assert!(config.quiet_others);
+fn quiet_others_is_per_table_and_defaults_to_off() {
+    let config = Config::parse("[kodi]\ngamescope_id = 1").unwrap();
+    assert!(!config.kodi.unwrap().quiet_others);
+    let text = "[kodi]\ngamescope_id = 1\nquiet_others = true\n[uxplay]\ngamescope_id = 3";
+    let config = Config::parse(text).unwrap();
+    assert!(config.kodi.unwrap().quiet_others);
+    assert!(!config.uxplay.unwrap().quiet_others);
     for (text, needle) in [
-        ("quiet_others = 1\n[kodi]\ngamescope_id = 1", "quiet_others"),
-        ("quiet_others = true", "[kodi], [snapcast] or [uxplay]"),
+        ("[kodi]\ngamescope_id = 1\nquiet_others = 1", "quiet_others"),
+        // Not top-level any more.
         (
-            "quiet_other = true\n[kodi]\ngamescope_id = 1",
-            "quiet_other",
+            "quiet_others = true\n[kodi]\ngamescope_id = 1",
+            "quiet_others",
         ),
     ] {
         let err = Config::parse(text).unwrap_err();

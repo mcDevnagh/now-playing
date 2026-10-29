@@ -17,10 +17,6 @@ const DEFAULT_LAUNCH_AT_START_WAIT: u64 = 30;
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
-    /// A player starting quiets the others: Kodi is paused, and our
-    /// Snapcast client muted.
-    #[serde(default)]
-    pub quiet_others: bool,
     pub kodi: Option<Kodi>,
     pub snapcast: Option<Snapcast>,
     pub uxplay: Option<Uxplay>,
@@ -33,6 +29,8 @@ pub struct Kodi {
     pub app: App,
     /// Bring the app to the front when the player starts.
     pub show_on_playback: bool,
+    /// Quiet the other players when this one starts.
+    pub quiet_others: bool,
     /// Kodi's JSON-RPC TCP address.
     pub address: String,
     /// Launch the app each time Gaming Mode starts, then go home once it's in
@@ -47,6 +45,8 @@ pub struct Snapcast {
     pub app: App,
     /// Bring the app to the front when the player starts.
     pub show_on_playback: bool,
+    /// Quiet the other players when this one starts.
+    pub quiet_others: bool,
     /// snapserver's JSON-RPC address.
     pub server: String,
     /// The client to follow [default: this machine's hostname].
@@ -64,6 +64,8 @@ pub struct Uxplay {
     pub app: App,
     /// Bring the app to the front when the player starts.
     pub show_on_playback: bool,
+    /// Quiet the other players when this one starts.
+    pub quiet_others: bool,
     /// The `WM_CLASS` class of UxPlay's video window.
     pub window_class: String,
     /// Launch the app each time Gaming Mode starts, then go home once it's in
@@ -79,6 +81,8 @@ struct RawKodi {
     steam_game_id: Option<u64>,
     #[serde(default)]
     show_on_playback: bool,
+    #[serde(default)]
+    quiet_others: bool,
     address: Option<String>,
     #[serde(default)]
     launch_at_start: bool,
@@ -93,6 +97,8 @@ struct RawSnapcast {
     steam_game_id: Option<u64>,
     #[serde(default)]
     show_on_playback: bool,
+    #[serde(default)]
+    quiet_others: bool,
     server: String,
     client: Option<String>,
     #[serde(default)]
@@ -108,6 +114,8 @@ struct RawUxplay {
     steam_game_id: Option<u64>,
     #[serde(default)]
     show_on_playback: bool,
+    #[serde(default)]
+    quiet_others: bool,
     window_class: Option<String>,
     #[serde(default)]
     launch_at_start: bool,
@@ -127,6 +135,7 @@ impl TryFrom<RawKodi> for Kodi {
         Ok(Self {
             app,
             show_on_playback: raw.show_on_playback,
+            quiet_others: raw.quiet_others,
             address: raw
                 .address
                 .unwrap_or_else(|| DEFAULT_KODI_ADDRESS.to_owned()),
@@ -155,6 +164,7 @@ impl TryFrom<RawSnapcast> for Snapcast {
         Ok(Self {
             app,
             show_on_playback: raw.show_on_playback,
+            quiet_others: raw.quiet_others,
             server: raw.server,
             client: raw.client,
             launch_at_start,
@@ -178,6 +188,7 @@ impl TryFrom<RawUxplay> for Uxplay {
         Ok(Self {
             app,
             show_on_playback: raw.show_on_playback,
+            quiet_others: raw.quiet_others,
             window_class: raw
                 .window_class
                 .unwrap_or_else(|| DEFAULT_UXPLAY_WINDOW_CLASS.to_owned()),

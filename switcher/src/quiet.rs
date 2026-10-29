@@ -2,6 +2,10 @@
 //! other: Kodi is paused, and our Snapcast client is muted, its stream
 //! playing on.
 //!
+//! Each player's table chooses whether its starts quiet the others. Our
+//! Snapcast client is unmuted whenever Snapcast starts, whatever the tables
+//! say, so a mute never outlasts the next time its stream plays.
+//!
 //! Every command sets a state, never toggles one, so it's sent whatever we
 //! think the player is doing: pausing something paused, or muting something
 //! muted, does nothing.
@@ -54,17 +58,27 @@ impl Quiet {
     }
 }
 
-/// What a start does to the other players. Held by the dispatch loop only.
-/// Empty without `quiet_others`.
+/// What a start does to the players. Held by the dispatch loop only.
 #[derive(Default)]
 pub struct Others {
     kodi: Option<kodi::Controller>,
     snapcast: Option<snapcast::Controller>,
+    /// The players whose starts quiet the others: their tables set
+    /// `quiet_others`.
+    quieting: Vec<Player>,
 }
 
 impl Others {
-    pub fn new(kodi: Option<kodi::Controller>, snapcast: Option<snapcast::Controller>) -> Self {
-        Others { kodi, snapcast }
+    pub fn new(
+        kodi: Option<kodi::Controller>,
+        snapcast: Option<snapcast::Controller>,
+        quieting: Vec<Player>,
+    ) -> Self {
+        Others {
+            kodi,
+            snapcast,
+            quieting,
+        }
     }
 
     /// Whether it can reach Kodi and Snapcast.
@@ -73,8 +87,14 @@ impl Others {
         (self.kodi.is_some(), self.snapcast.is_some())
     }
 
-    /// Quiets every player but `started`; for Snapcast, also unmutes our
-    /// client. With `dry_run`, only logs.
+    /// The players whose starts quiet the others.
+    #[cfg(test)]
+    pub fn quieting(&self) -> &[Player] {
+        &self.quieting
+    }
+
+    /// Quiets every player but `started`, if its table says to; for
+    /// Snapcast, always unmutes our client. With `dry_run`, only logs.
     pub fn started(&self, started: Player, dry_run: bool) {
         let quiets = self.quiets(started);
         if quiets.is_empty() {
@@ -95,10 +115,14 @@ impl Others {
 
     /// What starting `started` does, to the players we can reach.
     fn quiets(&self, started: Player) -> Vec<Quiet> {
-        let quiets: &[Quiet] = match started {
-            Player::Kodi => &[Quiet::MuteSnapcast],
-            Player::Snapcast => &[Quiet::PauseKodi, Quiet::UnmuteSnapcast],
-            Player::Uxplay => &[Quiet::PauseKodi, Quiet::MuteSnapcast],
+        let quiet_others = self.quieting.contains(&started);
+        let quiets: &[Quiet] = match (started, quiet_others) {
+            (Player::Kodi, true) => &[Quiet::MuteSnapcast],
+            (Player::Kodi, false) => &[],
+            (Player::Snapcast, true) => &[Quiet::PauseKodi, Quiet::UnmuteSnapcast],
+            (Player::Snapcast, false) => &[Quiet::UnmuteSnapcast],
+            (Player::Uxplay, true) => &[Quiet::PauseKodi, Quiet::MuteSnapcast],
+            (Player::Uxplay, false) => &[],
         };
         let reaches = |quiet: &&Quiet| match quiet {
             Quiet::PauseKodi => self.kodi.is_some(),

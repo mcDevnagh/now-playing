@@ -11,7 +11,7 @@ use now_playing_core::{hostname, snapcast as core_snapcast};
 
 use crate::action::Request;
 use crate::config::Config;
-use crate::quiet::Others;
+use crate::quiet::{Others, Player};
 
 /// Follows a player, sending [`Request::PlaybackStarted`] on `requests`
 /// whenever it starts. Holds everything it needs, such as addresses; the
@@ -21,22 +21,33 @@ pub trait Listener: Send {
     fn run(self: Box<Self>, requests: Sender<Request>) -> !;
 }
 
-/// The listeners `config` asks for, and what their starts do to each other.
+/// The listeners `config` asks for, and what their starts do to the
+/// players.
 ///
-/// Without `quiet_others`, there's one listener per table that sets
-/// `show_on_playback`, and `Others` is empty. With it, every table gets a
-/// listener, since a table that doesn't show its app still names a player
-/// to quiet and be quieted by; its listener's `app` is `None`.
+/// A table gets a listener when there's something to do on its player's
+/// starts, or its player may be quieted: Snapcast's always, as its starts
+/// unmute our client; Kodi's if it shows on playback, or any table quiets
+/// the others; UxPlay's if it shows on playback or quiets the others. A
+/// listener's `app` is `None` without `show_on_playback`.
 pub fn from_config(config: &Config) -> Result<(Vec<Box<dyn Listener>>, Others), String> {
-    let quiet = config.quiet_others;
+    let quieting: Vec<Player> = [
+        (Player::Kodi, config.kodi.as_ref().map(|t| t.quiet_others)),
+        (
+            Player::Snapcast,
+            config.snapcast.as_ref().map(|t| t.quiet_others),
+        ),
+        (
+            Player::Uxplay,
+            config.uxplay.as_ref().map(|t| t.quiet_others),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(player, quiet)| quiet?.then_some(player))
+    .collect();
     let mut listeners: Vec<Box<dyn Listener>> = Vec::new();
     let mut kodi_controller = None;
     let mut snapcast_controller = None;
-    if let Some(table) = config
-        .snapcast
-        .as_ref()
-        .filter(|t| t.show_on_playback || quiet)
-    {
+    if let Some(table) = &config.snapcast {
         let client = match &table.client {
             Some(client) => client.clone(),
             None => {
@@ -44,7 +55,7 @@ pub fn from_config(config: &Config) -> Result<(Vec<Box<dyn Listener>>, Others), 
             }
         };
         let (controller, inbox) = core_snapcast::channel();
-        snapcast_controller = quiet.then_some(controller);
+        snapcast_controller = Some(controller);
         listeners.push(Box::new(snapcast::Snapcast {
             server: table.server.clone(),
             client,
@@ -52,27 +63,25 @@ pub fn from_config(config: &Config) -> Result<(Vec<Box<dyn Listener>>, Others), 
             inbox,
         }));
     }
-    if let Some(table) = config.kodi.as_ref().filter(|t| t.show_on_playback || quiet) {
+    let kodi = config.kodi.as_ref();
+    if let Some(table) = kodi.filter(|t| t.show_on_playback || !quieting.is_empty()) {
         let (controller, inbox) = kodi::channel();
-        kodi_controller = quiet.then_some(controller);
+        kodi_controller = Some(controller);
         listeners.push(Box::new(kodi::Kodi {
             address: table.address.clone(),
             app: table.show_on_playback.then_some(table.app),
             inbox,
         }));
     }
-    if let Some(table) = config
-        .uxplay
-        .as_ref()
-        .filter(|t| t.show_on_playback || quiet)
-    {
+    let uxplay = config.uxplay.as_ref();
+    if let Some(table) = uxplay.filter(|t| t.show_on_playback || t.quiet_others) {
         listeners.push(Box::new(uxplay::Uxplay {
             window_class: table.window_class.clone(),
             gamescope: table.app.gamescope,
             app: table.show_on_playback.then_some(table.app),
         }));
     }
-    let others = Others::new(kodi_controller, snapcast_controller);
+    let others = Others::new(kodi_controller, snapcast_controller, quieting);
     Ok((listeners, others))
 }
 
