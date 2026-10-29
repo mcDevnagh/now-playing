@@ -28,7 +28,8 @@ struct Args {
     /// The config file [default: $XDG_CONFIG_HOME/now-playing/switcher.toml].
     #[arg(long, value_name = "PATH")]
     config: Option<PathBuf>,
-    /// Log what each action would do, without doing it.
+    /// Log what each action would do, without switching, launching, pausing
+    /// or muting.
     #[arg(long)]
     dry_run: bool,
 }

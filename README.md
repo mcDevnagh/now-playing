@@ -106,7 +106,8 @@ needed. Launch it from Gaming Mode like any game.
 
 ## The switcher
 
-`now-playing-switcher` runs in the background in Steam's Gaming Mode:
+`now-playing-switcher` runs in the background in Steam's Gaming Mode. For
+each player whose table sets `show_on_playback = true`:
 
 - When music starts on this machine's Snapcast client, it brings Now
   Playing to the front, launching it if it isn't running.
@@ -114,6 +115,18 @@ needed. Launch it from Gaming Mode like any game.
 - When a device starts mirroring its screen to UxPlay, it brings UxPlay to
   the front. UxPlay has to be running to accept a connection, so it's never
   launched for a cast.
+
+And for any player:
+
+- Optionally, starting it quiets the others, so two never play over each
+  other: set `quiet_others = true` in its table. Kodi starting mutes this
+  machine's Snapcast client; Snapcast starting pauses Kodi; a cast to
+  UxPlay pauses Kodi and mutes the client. UxPlay itself is never touched.
+  Muting leaves the music playing, on the phone and in other rooms; pause
+  and play it to hear it here again, as Snapcast starting always unmutes
+  the client. Each command sets a state rather than toggling one, so
+  pausing something already paused, or muting something already muted,
+  does nothing.
 - Optionally, each time Gaming Mode starts, it launches apps in the
   background, such as Kodi, so they're ready to play: once Steam's UI is
   up, it launches each one, waits for it to come to the front, then goes
@@ -124,7 +137,12 @@ reconnect. In Desktop Mode it does nothing.
 
 UxPlay reports nothing about a cast, so the switcher follows its video
 window instead: UxPlay opens one when mirroring starts and closes it when
-mirroring stops. Audio-only AirPlay opens no window, so it doesn't switch.
+mirroring stops. Audio-only AirPlay opens no window, so it doesn't switch
+or quiet anything.
+
+Since Snapcast starting always unmutes this machine's client, a mute made
+by hand, such as in Snapweb, is undone the next time the stream starts
+playing.
 
 It reads which app is in front from gamescope, and whether an app is
 running from Steam's processes. To switch or launch, it asks Steam's UI,
@@ -225,7 +243,8 @@ now-playing-switcher [--config PATH] [--dry-run]
 - `--config`: the config file. Defaults to
   `$XDG_CONFIG_HOME/now-playing/switcher.toml`, else
   `~/.config/now-playing/switcher.toml`.
-- `--dry-run`: log what it would do, without switching or launching.
+- `--dry-run`: log what it would do, without switching, launching, pausing
+  or muting.
 
 ## The placeholder window
 

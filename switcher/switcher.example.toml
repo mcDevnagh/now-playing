@@ -15,12 +15,20 @@
 # the background. An app that opens no window until it's used never comes to
 # the front, so after `launch_at_start_wait` seconds (default 30) it goes
 # home anyway.
+#
+# Any table can also set `quiet_others = true`: when its player starts, the
+# switcher quiets the others, so two never play over each other. Kodi is
+# paused, and this machine's Snapcast client is muted, its music playing on
+# elsewhere. UxPlay is never touched. Snapcast starting always unmutes the
+# client, so pausing and playing the music brings it back here.
 
 # Kodi starts or resumes playback → bring Kodi to the front. Kodi has to be
 # running to play anything, so it never needs launching.
 [kodi]
 gamescope_id = 1234567890
 show_on_playback = true
+# Kodi starting mutes this machine's Snapcast client.
+quiet_others = true
 # Kodi's JSON-RPC TCP port. This is the default.
 address = "127.0.0.1:9090"
 # To have Kodi running from login, give its Steam game ID too:
@@ -33,6 +41,8 @@ address = "127.0.0.1:9090"
 gamescope_id = 2345678901
 steam_game_id = 10074614166745776128
 show_on_playback = true
+# Snapcast starting pauses Kodi.
+quiet_others = true
 # snapserver's JSON-RPC address. Required.
 server = "snapserver:1705"
 # The Snapcast client to follow, by id or host name. Defaults to this
@@ -48,6 +58,8 @@ gamescope_id = 3456789012
 steam_game_id = 14846795755745705984
 show_on_playback = true
 launch_at_start = true
+# A cast pauses Kodi and mutes this machine's Snapcast client.
+quiet_others = true
 # The WM_CLASS class of UxPlay's video window, which it opens while a device
 # mirrors and closes when it stops. This is the default.
 # window_class = "GStreamer"
