@@ -2,8 +2,9 @@
 
 A full-screen "Now Playing" screen for a [Snapcast] client. It shows the
 title, artists, album, cover art and progress of whatever the client is
-playing, over a blurred, darkened copy of the cover. When nothing is
-playing, the screen is black.
+playing along the bottom quarter of the screen, over a blurred, darkened
+copy of the cover. The time is always shown in the top left; when nothing
+is playing, it's all there is, on black.
 
 It's built for a TV on a Linux HTPC, launched from Steam's Gaming Mode
 (gamescope), but runs on any Linux desktop with SDL3.
@@ -35,7 +36,7 @@ the front when music starts, Kodi to the front when Kodi plays, and
   resolve (snapserver may use its own hostname), the `--server` host is
   used instead.
 - It redraws only when something changes, plus once a second for the
-  progress bar while playing. It goes quiet when another window, such as
+  progress bar while playing, and otherwise once a minute for the clock. It goes quiet when another window, such as
   a game, is in front. Changes fade over 400 ms.
 - If the connection drops, it reconnects with backoff, up to 30 s apart.
 

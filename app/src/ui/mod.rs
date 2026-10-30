@@ -1,6 +1,7 @@
+mod components;
 mod keys;
-mod layout;
 mod text;
+mod texture;
 mod window;
 
 pub use window::{Updates, run};

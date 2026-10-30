@@ -1,37 +1,36 @@
 //! The full-screen SDL window and its event loop.
 //!
 //! The main thread sleeps in `SDL_WaitEvent`. It wakes for input and window
-//! events, for a user event pushed when a new state or cover arrives, and
-//! once a second for the progress bar, but only while playing and focused.
+//! events, for a user event pushed when a new state or cover arrives, and,
+//! while the window is focused, when the clock or the progress bar next
+//! moves: once a second while playing, otherwise at the next minute.
 //! Only during a fade (`FADE`, after a change of what's on screen) does it
 //! draw every frame.
 
 use std::ptr;
+use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use chrono::Local;
 use sdl3::event::{Event, EventSender, WindowEvent};
 #[cfg(debug_assertions)]
 use sdl3::keyboard::{Keycode, Scancode};
-use sdl3::pixels::{Color, PixelFormat};
-use sdl3::rect::Rect as SdlRect;
-use sdl3::render::{BlendMode, ScaleMode, Texture, TextureCreator, WindowCanvas};
-use sdl3::video::WindowContext;
+use sdl3::pixels::Color;
+use sdl3::render::{BlendMode, Texture, WindowCanvas};
 
+use super::components::{self, Background, Metadata, Regions, Time};
 use super::keys::command_for;
-use super::layout::{self, Layout, Rect};
 use super::text::Fonts;
-use crate::art::{self, Cover, Fetcher, Image};
+use super::texture::{self, Creator};
+use crate::art::{self, Cover, Fetcher};
 use crate::snapcast::Controller;
 use crate::state::{State, Track};
 
 const TICK: Duration = Duration::from_secs(1);
 const FADE: Duration = Duration::from_millis(400);
 const PAUSED_OPACITY: f32 = 0.35;
-/// How much the blurred background is darkened: to 35% brightness, as on
-/// the old web page.
-const BACKGROUND_DIM: u8 = 166;
 
 /// What other threads hand the window.
 enum Message {
@@ -125,16 +124,18 @@ pub fn run(
     let art = spawn_art(Fetcher::new(art_host), tx, waker());
 
     let creator = canvas.texture_creator();
-    let (_, height) = canvas.output_size().map_err(|e| e.to_string())?;
+    let size = canvas.output_size().map_err(|e| e.to_string())?;
+    let fonts = Rc::new(Fonts::load());
     let mut screen = Screen {
-        fonts: Fonts::load(),
         creator: &creator,
-        scene: None,
+        background: Background,
+        time: Time::new(&creator, fonts.clone()),
+        metadata: Metadata::new(&creator, fonts),
         state: State::Idle,
         since: Instant::now(),
         art,
         requested: None,
-        cover_side: cover_side(height),
+        cover_side: cover_side(size),
         failed: None,
         cover: None,
         cover_id: 0,
@@ -176,22 +177,23 @@ fn event_loop(
     let mut focused = true;
     let mut shown = true;
     let mut dirty = true;
-    // When the progress bar next needs redrawing. A deadline, not a timeout
-    // per wait: other events (an air mouse's motion, say) would otherwise
-    // keep restarting the wait, and the bar would never move.
+    // When the clock or progress bar next needs redrawing. A deadline, not
+    // a timeout per wait: other events (an air mouse's motion, say) would
+    // otherwise keep restarting the wait, and the bar would never move.
     let mut next_tick = None;
     loop {
         let visible = focused && shown;
         screen.set_visible(visible);
         let fading = visible && screen.fading();
+        let next = || Some(Instant::now() + screen.until_tick());
         next_tick = match next_tick {
-            _ if !(visible && screen.progressing()) => None,
+            _ if !visible => None,
             Some(tick) if Instant::now() >= tick => {
                 dirty = true;
-                Some(Instant::now() + TICK)
+                next()
             }
             Some(tick) => Some(tick),
-            None => Some(Instant::now() + TICK),
+            None => next(),
         };
         if visible && (dirty || fading) {
             screen.draw(canvas)?;
@@ -217,6 +219,8 @@ fn event_loop(
                     screen.receive(canvas, message)?;
                     dirty = true;
                 }
+                // Playing or pausing changes how often it ticks.
+                next_tick = None;
             }
             Event::Window { win_event, .. } => match win_event {
                 WindowEvent::FocusGained => (focused, dirty) = (true, true),
@@ -228,7 +232,7 @@ fn event_loop(
                 WindowEvent::Exposed => dirty = true,
                 WindowEvent::PixelSizeChanged(..) => {
                     screen.cancel_fade();
-                    screen.resize(canvas.output_size().map_err(|e| e.to_string())?.1);
+                    screen.resize(canvas.output_size().map_err(|e| e.to_string())?);
                     dirty = true;
                 }
                 _ => {}
@@ -273,9 +277,10 @@ fn log_key(keycode: Option<Keycode>, scancode: Option<Scancode>, raw: u16) {
 
 /// What's on screen, and the textures that draw it.
 struct Screen<'t> {
-    fonts: Fonts,
-    creator: &'t TextureCreator<WindowContext>,
-    scene: Option<Scene<'t>>,
+    creator: &'t Creator,
+    background: Background,
+    time: Time<'t>,
+    metadata: Metadata<'t>,
     state: State,
     /// When `state` arrived, to advance the progress bar from its position.
     since: Instant,
@@ -303,8 +308,8 @@ struct Fade<'t> {
     start: Instant,
 }
 
-/// What a frame shows, ignoring the progress bar: when this changes, the
-/// screen fades.
+/// What a frame shows, ignoring the clock and progress bar: when this
+/// changes, the screen fades.
 #[derive(PartialEq)]
 enum Look<'a> {
     Black,
@@ -316,16 +321,6 @@ enum Look<'a> {
         /// Which cover, if one is shown.
         cover: Option<u64>,
     },
-}
-
-/// A laid-out track with its text rasterised. Kept until the track's text,
-/// whether a cover is shown, or the screen size changes.
-struct Scene<'t> {
-    track: Track,
-    with_cover: bool,
-    size: (u32, u32),
-    layout: Layout,
-    lines: Vec<Texture<'t>>,
 }
 
 struct CoverTextures<'t> {
@@ -358,10 +353,10 @@ impl<'t> Screen<'t> {
         }
     }
 
-    /// The screen is now `height` pixels high. If covers are shown at a new
-    /// size, asks for the newest one again at that size.
-    fn resize(&mut self, height: u32) {
-        let side = cover_side(height);
+    /// The screen is now `size`. If covers are shown at a new size, asks
+    /// for the newest one again at that size.
+    fn resize(&mut self, size: (u32, u32)) {
+        let side = cover_side(size);
         if side == self.cover_side {
             return;
         }
@@ -378,8 +373,8 @@ impl<'t> Screen<'t> {
         match cover {
             Ok(cover) => {
                 self.cover = Some(CoverTextures {
-                    image: rgba_texture(self.creator, &cover.image)?,
-                    blur: rgba_texture(self.creator, &cover.blur)?,
+                    image: texture::rgba(self.creator, &cover.image)?,
+                    blur: texture::rgba(self.creator, &cover.blur)?,
                 });
                 self.cover_id += 1;
                 self.failed = None;
@@ -470,9 +465,13 @@ impl<'t> Screen<'t> {
         track.art_url.is_some() && self.cover.is_some() && self.failed != track.art_url
     }
 
-    /// Whether the progress bar moves on its own.
-    fn progressing(&self) -> bool {
-        matches!(&self.state, State::Playing(track) if track.duration.is_some())
+    /// How long until the screen next changes on its own: the progress bar
+    /// moves every second while playing, and the clock every minute.
+    fn until_tick(&self) -> Duration {
+        match &self.state {
+            State::Playing(track) if track.duration.is_some() => TICK,
+            _ => components::until_next_minute(&Local::now()),
+        }
     }
 
     fn draw(&mut self, canvas: &mut WindowCanvas) -> Result<(), String> {
@@ -486,16 +485,24 @@ impl<'t> Screen<'t> {
     fn draw_frame(&mut self, canvas: &mut WindowCanvas) -> Result<(), String> {
         canvas.set_draw_color(Color::BLACK);
         canvas.clear();
-        if let Some((track, opacity)) = self.track() {
-            let track = track.clone();
-            let progress = self.progress(&track);
-            let with_cover = self.shows_cover(&track);
-            let size = canvas.output_size().map_err(|e| e.to_string())?;
-            self.update_scene(&track, with_cover, size)?;
-            let scene = self.scene.as_mut().expect("scene just updated");
-            let cover = self.cover.as_mut().filter(|_| with_cover);
-            draw_scene(canvas, scene, cover, opacity, progress)?;
+        let regions = Regions::new(canvas.output_size().map_err(|e| e.to_string())?);
+        let track = self
+            .track()
+            .map(|(track, opacity)| (track.clone(), opacity));
+        let with_cover = track
+            .as_ref()
+            .is_some_and(|(track, _)| self.shows_cover(track));
+        let progress = track.as_ref().and_then(|(track, _)| self.progress(track));
+        let (blur, image) = match self.cover.as_mut().filter(|_| with_cover) {
+            Some(cover) => (Some(&mut cover.blur), Some(&mut cover.image)),
+            None => (None, None),
+        };
+        self.background.draw(canvas, regions.background, blur)?;
+        if let Some((track, opacity)) = track {
+            self.metadata
+                .draw(canvas, regions.metadata, &track, image, progress, opacity)?;
         }
+        self.time.draw(canvas, regions.time, &Local::now())?;
         if let Some(fade) = &mut self.fade {
             let done = fade.start.elapsed().as_secs_f32() / FADE.as_secs_f32();
             if done < 1.0 {
@@ -520,137 +527,9 @@ impl<'t> Screen<'t> {
         };
         Some(((position + elapsed) / duration).clamp(0.0, 1.0) as f32)
     }
-
-    fn update_scene(
-        &mut self,
-        track: &Track,
-        with_cover: bool,
-        size: (u32, u32),
-    ) -> Result<(), String> {
-        let current = self.scene.as_ref().is_some_and(|s| {
-            s.size == size && s.with_cover == with_cover && layout::same_layout(&s.track, track)
-        });
-        if current {
-            return Ok(());
-        }
-        let screen = (size.0 as f32, size.1 as f32);
-        let layout = layout::layout(&self.fonts, track, with_cover, screen);
-        let lines = layout
-            .lines
-            .iter()
-            .map(|line| {
-                let bitmap = line.style.face(&self.fonts, screen.1).rasterize(&line.text);
-                white_texture(self.creator, bitmap.width, bitmap.height, &bitmap.alpha)
-            })
-            .collect::<Result<_, _>>()?;
-        self.scene = Some(Scene {
-            track: track.clone(),
-            with_cover,
-            size,
-            layout,
-            lines,
-        });
-        Ok(())
-    }
 }
 
-fn draw_scene(
-    canvas: &mut WindowCanvas,
-    scene: &mut Scene,
-    cover: Option<&mut CoverTextures>,
-    opacity: f32,
-    progress: Option<f32>,
-) -> Result<(), String> {
-    let alpha = |a: f32| (255.0 * a * opacity).round() as u8;
-
-    if let Some(cover) = cover {
-        // The tiny cover stretched over the whole screen (cropped to fill
-        // it, like CSS `background-size: cover`), then darkened.
-        let (width, height) = scene.size;
-        let side = width.max(height);
-        let offset = |length: u32| (length as i32 - side as i32) / 2;
-        cover.blur.set_alpha_mod(alpha(1.0));
-        let background = SdlRect::new(offset(width), offset(height), side, side);
-        canvas
-            .copy(&cover.blur, None, background)
-            .map_err(|e| e.to_string())?;
-        canvas.set_draw_color(Color::RGBA(0, 0, 0, BACKGROUND_DIM));
-        canvas.fill_rect(None).map_err(|e| e.to_string())?;
-
-        if let Some(rect) = scene.layout.cover {
-            cover.image.set_alpha_mod(alpha(1.0));
-            canvas
-                .copy(&cover.image, None, sdl_rect(rect))
-                .map_err(|e| e.to_string())?;
-        }
-    }
-    for (line, texture) in scene.layout.lines.iter().zip(&mut scene.lines) {
-        texture.set_alpha_mod(alpha(line.style.opacity()));
-        let query = texture.query();
-        let dst = SdlRect::new(
-            line.x.round() as i32,
-            line.y.round() as i32,
-            query.width,
-            query.height,
-        );
-        canvas.copy(texture, None, dst).map_err(|e| e.to_string())?;
-    }
-    if let (Some(bar), Some(progress)) = (scene.layout.bar, progress) {
-        canvas.set_draw_color(Color::RGBA(255, 255, 255, alpha(0.2)));
-        canvas.fill_rect(sdl_rect(bar)).map_err(|e| e.to_string())?;
-        canvas.set_draw_color(Color::RGBA(255, 255, 255, alpha(1.0)));
-        canvas
-            .fill_rect(sdl_rect(Rect {
-                w: bar.w * progress,
-                ..bar
-            }))
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-fn rgba_texture<'t>(
-    creator: &'t TextureCreator<WindowContext>,
-    image: &Image,
-) -> Result<Texture<'t>, String> {
-    let mut texture = creator
-        .create_texture_static(PixelFormat::RGBA32, image.width, image.height)
-        .map_err(|e| e.to_string())?;
-    texture
-        .update(None, &image.rgba, image.width as usize * 4)
-        .map_err(|e| e.to_string())?;
-    texture.set_blend_mode(BlendMode::Blend);
-    // Linear filtering when scaled: smooths the cover, and turns the tiny
-    // background into a blur.
-    texture.set_scale_mode(ScaleMode::Linear);
-    Ok(texture)
-}
-
-/// A white texture whose alpha is `coverage`.
-fn white_texture<'t>(
-    creator: &'t TextureCreator<WindowContext>,
-    width: usize,
-    height: usize,
-    coverage: &[u8],
-) -> Result<Texture<'t>, String> {
-    let image = Image {
-        width: width as u32,
-        height: height as u32,
-        rgba: coverage.iter().flat_map(|&a| [255, 255, 255, a]).collect(),
-    };
-    rgba_texture(creator, &image)
-}
-
-fn sdl_rect(r: Rect) -> SdlRect {
-    SdlRect::new(
-        r.x.round() as i32,
-        r.y.round() as i32,
-        r.w.round().max(1.0) as u32,
-        r.h.round().max(1.0) as u32,
-    )
-}
-
-/// The side, in pixels, of the cover on a screen `height` pixels high.
-fn cover_side(height: u32) -> u32 {
-    (layout::cover_side(height as f32).ceil() as u32).max(1)
+/// The side, in pixels, of the cover on a screen of `size`.
+fn cover_side(size: (u32, u32)) -> u32 {
+    (components::cover_side(Regions::new(size).metadata).ceil() as u32).max(1)
 }

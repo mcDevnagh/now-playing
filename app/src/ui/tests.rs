@@ -1,4 +1,10 @@
-use super::layout::{Style, layout, same_layout};
+use std::time::Duration;
+
+use chrono::{Local, TimeZone};
+
+use super::components::metadata::{Style, cover_side, layout, same_layout};
+use super::components::time::{clock_text, until_next_minute};
+use super::components::{Bounds, Regions};
 use super::text::{Face, Fonts};
 use crate::state::Track;
 
@@ -17,8 +23,12 @@ fn track() -> Track {
     }
 }
 
+fn metadata_bounds() -> Bounds {
+    Regions::new((SCREEN.0 as u32, SCREEN.1 as u32)).metadata
+}
+
 fn title_face(fonts: &Fonts) -> Face<'_> {
-    Style::Title.face(fonts, SCREEN.1)
+    Face::new(&fonts.bold, 70.0)
 }
 
 #[test]
@@ -60,7 +70,7 @@ fn a_word_too_long_for_a_line_is_broken() {
 #[test]
 fn ellipsize() {
     let fonts = Fonts::load();
-    let face = Style::Album.face(&fonts, SCREEN.1);
+    let face = Face::new(&fonts.regular, 32.0);
     assert_eq!(face.ellipsize("Album A", 500.0), "Album A");
     let cut = face.ellipsize(LONG_TITLE, 500.0);
     assert!(cut.ends_with('…') && !cut.ends_with(" …"));
@@ -68,44 +78,65 @@ fn ellipsize() {
 }
 
 #[test]
+fn regions_split_the_screen() {
+    let (w, h) = SCREEN;
+    let r = Regions::new((w as u32, h as u32));
+    assert_eq!(r.background, Bounds::screen((w as u32, h as u32)));
+    // The time in the top quarter, the metadata in the bottom quarter, with
+    // the same margins at the sides.
+    assert_eq!((r.time.y, r.time.h), (0.0, 0.25 * h));
+    assert_eq!((r.metadata.y, r.metadata.h), (0.75 * h, 0.25 * h));
+    assert_eq!(r.time.x, r.metadata.x);
+    assert_eq!(r.time.w, r.metadata.w);
+    assert!(r.time.x > 0.0 && r.time.x + r.time.w < w);
+}
+
+fn inside(outer: Bounds, x: f32, y: f32, w: f32, h: f32) -> bool {
+    x >= outer.x && y >= outer.y && x + w <= outer.x + outer.w && y + h <= outer.y + outer.h
+}
+
+#[test]
 fn layout_with_art() {
     let fonts = Fonts::load();
-    let (w, h) = SCREEN;
-    let l = layout(&fonts, &track(), true, SCREEN);
+    let bounds = metadata_bounds();
+    let l = layout(&fonts, &track(), true, bounds);
 
     let cover = l.cover.expect("cover");
-    assert!((cover.w - 0.62 * h).abs() < 0.01);
     assert_eq!(cover.w, cover.h);
-    assert_eq!(cover.y, (h - cover.h) / 2.0);
+    assert_eq!(cover.x, bounds.x);
+    assert!((cover.w - cover_side(bounds)).abs() < 0.01);
+    assert!(inside(bounds, cover.x, cover.y, cover.w, cover.h));
 
     let styles: Vec<_> = l.lines.iter().map(|line| line.style).collect();
     assert_eq!(styles, [Style::Title, Style::Artist, Style::Album]);
     assert_eq!(l.lines[1].text, "Artist A, Artist B");
     let bar = l.bar.expect("bar");
+    assert!(bar.x > cover.x + cover.w);
+    assert!(inside(bounds, bar.x, bar.y, bar.w, bar.h));
     for line in &l.lines {
         assert_eq!(line.x, bar.x);
-        assert!(line.x > cover.x + cover.w);
+        assert!(line.y >= bounds.y && line.y < bar.y, "{line:?}");
         assert!(line.x + line.width <= bar.x + bar.w);
     }
-    assert!(bar.x + bar.w <= w);
     // The text block is vertically centred: as much room above as below.
-    let above = l.lines[0].y;
-    let below = h - (bar.y + bar.h);
+    let above = l.lines[0].y - bounds.y;
+    let below = bounds.y + bounds.h - (bar.y + bar.h);
     assert!(
-        (above - below).abs() < 0.05 * h,
+        (above - below).abs() < 0.1 * bounds.h,
         "{above} above, {below} below"
     );
 }
 
 #[test]
-fn layout_without_art_is_centred() {
+fn layout_without_art_is_left_aligned() {
     let fonts = Fonts::load();
-    let l = layout(&fonts, &track(), false, SCREEN);
+    let bounds = metadata_bounds();
+    let l = layout(&fonts, &track(), false, bounds);
     assert_eq!(l.cover, None);
     for line in &l.lines {
-        let centre = line.x + line.width / 2.0;
-        assert!((centre - SCREEN.0 / 2.0).abs() < 1.0, "{line:?}");
+        assert_eq!(line.x, bounds.x, "{line:?}");
     }
+    assert_eq!(l.bar.expect("bar").w, bounds.w);
 }
 
 #[test]
@@ -119,10 +150,26 @@ fn layout_of_a_sparse_track() {
         position: None,
         duration: None,
     };
-    let l = layout(&fonts, &track, false, SCREEN);
+    let bounds = metadata_bounds();
+    let l = layout(&fonts, &track, false, bounds);
     assert_eq!(l.bar, None);
-    assert_eq!(l.lines.len(), 3);
-    assert!(l.lines.iter().all(|line| line.style == Style::Title));
+    assert_eq!(l.lines.len(), 1);
+    let title = &l.lines[0];
+    assert_eq!(title.style, Style::Title);
+    assert!(title.text.ends_with('…'));
+    assert!(title.x + title.width <= bounds.x + bounds.w);
+}
+
+#[test]
+fn the_clock_shows_hours_and_minutes() {
+    let now = Local.with_ymd_and_hms(2026, 10, 30, 9, 5, 42).unwrap();
+    assert_eq!(clock_text(&now), "9:05 am");
+    assert_eq!(until_next_minute(&now), Duration::from_secs(18));
+    let on_the_minute = Local.with_ymd_and_hms(2026, 10, 30, 21, 0, 0).unwrap();
+    assert_eq!(clock_text(&on_the_minute), "9:00 pm");
+    let midnight = Local.with_ymd_and_hms(2026, 10, 30, 0, 30, 0).unwrap();
+    assert_eq!(clock_text(&midnight), "12:30 am");
+    assert_eq!(until_next_minute(&on_the_minute), Duration::from_secs(60));
 }
 
 #[test]
