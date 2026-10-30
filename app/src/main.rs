@@ -40,9 +40,9 @@ struct Args {
     #[cfg(debug_assertions)]
     #[arg(long, value_name = "LOG", value_parser = read_log)]
     fake: Option<String>,
-    /// Show this weather instead of fetching it: a condition, the
-    /// temperature in `--units`, and `night` for the night icons, e.g.
-    /// `partly-cloudy,57,night`.
+    /// Show this weather instead of fetching it, with a made-up forecast: a
+    /// condition, the temperature in `--units`, and `night` for the night
+    /// icons, e.g. `partly-cloudy,57,night`.
     #[cfg(debug_assertions)]
     #[arg(long, value_name = "CONDITION,TEMP[,night]", value_parser = debug::parse_fake_weather)]
     fake_weather: Option<debug::FakeWeather>,
@@ -80,7 +80,7 @@ fn main() -> ExitCode {
     let fake_weather = args
         .fake_weather
         .as_ref()
-        .map(|fake| fake.weather(args.units));
+        .map(|fake| fake.report(args.units));
     let follow_weather = move |mut updates: ui::WeatherUpdates| {
         #[cfg(debug_assertions)]
         if let Some(fake) = fake_weather {

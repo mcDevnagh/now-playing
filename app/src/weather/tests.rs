@@ -4,10 +4,12 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use chrono::NaiveDate;
+
 use super::*;
 
 /// A real response, captured on 2026-10-30.
-const OPEN_METEO: &str = r#"{"latitude":41.364597,"longitude":-75.83869,"generationtime_ms":0.21827220916748047,"utc_offset_seconds":0,"timezone":"GMT","timezone_abbreviation":"GMT","elevation":397.0,"current_units":{"time":"iso8601","interval":"seconds","temperature_2m":"°C","weather_code":"wmo code","is_day":""},"current":{"time":"2026-10-30T19:00","interval":900,"temperature_2m":12.6,"weather_code":2,"is_day":0}}"#;
+const OPEN_METEO: &str = r#"{"latitude":41.364597,"longitude":-75.83869,"generationtime_ms":0.4801750183105469,"utc_offset_seconds":-14400,"timezone":"America/New_York","timezone_abbreviation":"GMT-4","elevation":397.0,"current_units":{"time":"iso8601","interval":"seconds","temperature_2m":"°C","weather_code":"wmo code","is_day":""},"current":{"time":"2026-10-30T15:30","interval":900,"temperature_2m":12.2,"weather_code":0,"is_day":1},"daily_units":{"time":"iso8601","weather_code":"wmo code","temperature_2m_max":"°C","temperature_2m_min":"°C"},"daily":{"time":["2026-10-30","2026-10-31","2026-11-01","2026-11-02","2026-11-03","2026-11-04","2026-11-05"],"weather_code":[3,3,3,3,3,3,53],"temperature_2m_max":[14.5,10.5,14.0,14.1,15.4,17.5,14.5],"temperature_2m_min":[5.5,1.4,2.3,4.6,6.6,9.7,11.2]}}"#;
 
 /// IP.SB's response, in its real shape, with a made-up address and place.
 const IP_SB: &str = r#"{"organization":"Example Broadband","longitude":-1.2577,"city":"Oxford","timezone":"Europe\/London","isp":"Example Broadband","offset":0,"region":"England","asn":64500,"asn_organization":"Example Broadband","country":"United Kingdom","ip":"203.0.113.7","latitude":51.752,"continent_code":"EU","country_code":"GB","region_code":"ENG"}"#;
@@ -19,15 +21,60 @@ const HERE: Location = Location {
 
 #[test]
 fn parses_open_meteo() {
-    let weather = open_meteo::parse(OPEN_METEO).unwrap();
+    let report = open_meteo::parse(OPEN_METEO).unwrap();
     assert_eq!(
-        weather,
+        report.current,
         Weather {
-            condition: Some(Condition::PartlyCloudy),
-            is_day: false,
-            temperature: 12.6,
+            condition: Some(Condition::Clear),
+            is_day: true,
+            temperature: 12.2,
         }
     );
+    let date = |day| NaiveDate::from_ymd_opt(2026, 10, 30).unwrap() + chrono::Days::new(day);
+    assert_eq!(report.days.len(), 7);
+    assert_eq!(
+        report.days[0],
+        Day {
+            date: date(0),
+            condition: Some(Condition::Cloudy),
+            high: 14.5,
+            low: 5.5,
+        }
+    );
+    assert_eq!(
+        report.days[6],
+        Day {
+            date: date(6),
+            condition: Some(Condition::Rain),
+            high: 14.5,
+            low: 11.2,
+        }
+    );
+    for (i, day) in report.days.iter().enumerate() {
+        assert_eq!(day.date, date(i as u64));
+    }
+}
+
+#[test]
+fn days_without_a_high_and_low_are_left_out() {
+    let body = r#"{"current":{"temperature_2m":1.0,"weather_code":0,"is_day":1},
+        "daily":{"time":["2026-10-30","2026-10-31","2026-11-01"],
+        "weather_code":[0,null,99],
+        "temperature_2m_max":[5.0,6.0,null],"temperature_2m_min":[1.0,2.0,3.0]}}"#;
+    let days = open_meteo::parse(body).unwrap().days;
+    assert_eq!(days.len(), 2);
+    assert_eq!(days[0].condition, Some(Condition::Clear));
+    // A day without a code is just its temperatures.
+    assert_eq!(days[1].condition, None);
+    assert_eq!((days[1].high, days[1].low), (6.0, 2.0));
+}
+
+#[test]
+fn without_a_forecast_the_current_weather_still_counts() {
+    let body = r#"{"current":{"temperature_2m":1.0,"weather_code":0,"is_day":1}}"#;
+    let report = open_meteo::parse(body).unwrap();
+    assert_eq!(report.current.temperature, 1.0);
+    assert!(report.days.is_empty());
 }
 
 #[test]
@@ -42,7 +89,7 @@ fn open_meteo_without_a_temperature_is_an_error() {
 #[test]
 fn an_unknown_code_is_just_the_temperature() {
     let body = r#"{"current":{"temperature_2m":-4.0,"weather_code":200,"is_day":1}}"#;
-    let weather = open_meteo::parse(body).unwrap();
+    let weather = open_meteo::parse(body).unwrap().current;
     assert_eq!(weather.condition, None);
     assert!(weather.is_day);
     assert_eq!(weather.temperature, -4.0);
@@ -75,11 +122,12 @@ fn maps_wmo_codes_as_breezy_weather_does() {
 }
 
 #[test]
-fn asks_open_meteo_for_the_current_weather() {
+fn asks_open_meteo_for_the_weather_and_forecast() {
     assert_eq!(
         open_meteo::url("https://api.open-meteo.com", HERE),
         "https://api.open-meteo.com/v1/forecast?latitude=51.752&longitude=-1.2577\
-         &current=temperature_2m,weather_code,is_day"
+         &current=temperature_2m,weather_code,is_day\
+         &daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto"
     );
 }
 
@@ -158,12 +206,14 @@ fn serve_once(body: &'static str) -> (u16, mpsc::Receiver<String>) {
 fn fetches_the_weather() {
     let (port, request) = serve_once(OPEN_METEO);
     let source = Source::with_urls(&format!("http://127.0.0.1:{port}"), "unused");
-    let weather = source.current(HERE).unwrap();
-    assert_eq!(weather.condition, Some(Condition::PartlyCloudy));
+    let report = source.report(HERE).unwrap();
+    assert_eq!(report.current.condition, Some(Condition::Clear));
+    assert_eq!(report.days.len(), 7);
     assert_eq!(
         request.recv().unwrap(),
         "GET /v1/forecast?latitude=51.752&longitude=-1.2577\
-         &current=temperature_2m,weather_code,is_day HTTP/1.1"
+         &current=temperature_2m,weather_code,is_day\
+         &daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto HTTP/1.1"
     );
 }
 
@@ -182,6 +232,6 @@ fn a_failed_fetch_says_where() {
     let port = listener.local_addr().unwrap().port();
     drop(listener);
     let source = Source::with_urls(&format!("http://127.0.0.1:{port}"), "unused");
-    let error = source.current(HERE).unwrap_err();
+    let error = source.report(HERE).unwrap_err();
     assert!(error.contains(&format!("127.0.0.1:{port}")), "{error}");
 }

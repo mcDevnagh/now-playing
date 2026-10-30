@@ -20,14 +20,14 @@ use sdl3::keyboard::{Keycode, Scancode};
 use sdl3::pixels::Color;
 use sdl3::render::{BlendMode, Texture, WindowCanvas};
 
-use super::components::{self, Background, Metadata, Regions, Time, Weather};
+use super::components::{self, Background, Forecast, Metadata, Regions, Time, Weather, forecast};
 use super::keys::command_for;
 use super::text::Fonts;
 use super::texture::{self, Creator};
 use crate::art::{self, Cover, Fetcher};
 use crate::snapcast::Controller;
 use crate::state::{State, Track};
-use crate::weather::{self, Units};
+use crate::weather::{Report, Units};
 
 const TICK: Duration = Duration::from_secs(1);
 const FADE: Duration = Duration::from_millis(400);
@@ -38,8 +38,8 @@ enum Message {
     State(State),
     /// A cover URL, and its decoded images or why there are none.
     Cover(String, Result<Cover, String>),
-    /// The current weather, or None if there's none to show.
-    Weather(Option<weather::Weather>),
+    /// The weather now and the forecast, or None if there's none to show.
+    Weather(Option<Report>),
 }
 
 /// Wakes the window's event loop from another thread.
@@ -85,13 +85,13 @@ impl Updates {
 pub struct WeatherUpdates {
     tx: Sender<Message>,
     waker: Waker,
-    last: Option<Option<weather::Weather>>,
+    last: Option<Option<Report>>,
 }
 
 impl WeatherUpdates {
     /// Sends `weather` and wakes the window, unless it is the same as the
     /// last.
-    pub fn send(&mut self, weather: Option<weather::Weather>) {
+    pub fn send(&mut self, weather: Option<Report>) {
         if self.last.as_ref() == Some(&weather) {
             return;
         }
@@ -165,8 +165,9 @@ pub fn run(
         background: Background,
         time: Time::new(&creator, fonts.clone()),
         weather: Weather::new(&creator, fonts.clone(), units),
+        forecast: Forecast::new(&creator, fonts.clone(), units),
         metadata: Metadata::new(&creator, fonts),
-        current_weather: None,
+        report: None,
         state: State::Idle,
         since: Instant::now(),
         art,
@@ -317,8 +318,10 @@ struct Screen<'t> {
     background: Background,
     time: Time<'t>,
     weather: Weather<'t>,
+    forecast: Forecast<'t>,
     metadata: Metadata<'t>,
-    current_weather: Option<weather::Weather>,
+    /// The weather now and the forecast, if there is any to show.
+    report: Option<Report>,
     state: State,
     /// When `state` arrived, to advance the progress bar from its position.
     since: Instant,
@@ -375,7 +378,7 @@ impl<'t> Screen<'t> {
         match message {
             Message::State(state) => self.set_state(state),
             Message::Cover(url, cover) => self.set_cover(url, cover)?,
-            Message::Weather(weather) => self.current_weather = weather,
+            Message::Weather(report) => self.report = report,
         }
         Ok(())
     }
@@ -544,8 +547,12 @@ impl<'t> Screen<'t> {
                 .draw(canvas, regions.metadata, &track, image, progress, opacity)?;
         }
         self.time.draw(canvas, regions.time, &Local::now())?;
+        let report = self.report.as_ref();
         self.weather
-            .draw(canvas, regions.weather, self.current_weather.as_ref())?;
+            .draw(canvas, regions.weather, report.map(|r| &r.current))?;
+        let today = Local::now().date_naive();
+        let days = report.map_or(&[][..], |r| forecast::from(&r.days, today));
+        self.forecast.draw(canvas, regions.forecast, days, today)?;
         if let Some(fade) = &mut self.fade {
             let done = fade.start.elapsed().as_secs_f32() / FADE.as_secs_f32();
             if done < 1.0 {

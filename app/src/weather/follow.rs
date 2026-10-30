@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use ureq::Agent;
 
-use super::{Location, Weather, locate, open_meteo};
+use super::{Location, Report, locate, open_meteo};
 
 const TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_BYTES: u64 = 1024 * 1024;
@@ -43,7 +43,8 @@ impl Source {
         }
     }
 
-    pub fn current(&self, location: Location) -> Result<Weather, String> {
+    /// The weather now and the forecast at `location`.
+    pub fn report(&self, location: Location) -> Result<Report, String> {
         let url = open_meteo::url(&self.weather_base, location);
         open_meteo::parse(&self.get(&url)?).map_err(|e| format!("{url}: {e}"))
     }
@@ -117,17 +118,17 @@ impl Default for Schedule {
     }
 }
 
-/// Feeds the current weather at `location` to `on_weather` every
-/// `EVERY`, and None once it's `STALE`. Without a location, finds one
-/// from the IP address first. Never returns.
-pub fn follow(location: Option<Location>, mut on_weather: impl FnMut(Option<Weather>)) {
+/// Feeds the weather at `location` to `on_weather` every `EVERY`, and
+/// None once it's `STALE`. Without a location, finds one from the IP
+/// address first. Never returns.
+pub fn follow(location: Option<Location>, mut on_weather: impl FnMut(Option<Report>)) {
     let source = Source::new();
     let location = location.unwrap_or_else(|| find(&source));
     let mut schedule = Schedule::new();
     loop {
-        let wait = match source.current(location) {
-            Ok(weather) => {
-                on_weather(Some(weather));
+        let wait = match source.report(location) {
+            Ok(report) => {
+                on_weather(Some(report));
                 schedule.fetched(Instant::now())
             }
             Err(e) => {

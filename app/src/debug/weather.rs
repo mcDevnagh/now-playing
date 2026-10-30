@@ -1,8 +1,9 @@
-//! Made-up weather, to see the weather component before fetching it.
+//! Made-up weather, to see the weather and forecast without fetching them.
 
+use chrono::{Days, Local};
 use clap::ValueEnum;
 
-use crate::weather::{Condition, Units, Weather};
+use crate::weather::{Condition, Day, Report, Units, Weather};
 
 /// Weather given with `--fake-weather`.
 #[derive(Clone)]
@@ -14,11 +15,35 @@ pub struct FakeWeather {
 }
 
 impl FakeWeather {
-    pub fn weather(&self, units: Units) -> Weather {
-        Weather {
-            condition: Some(self.condition),
-            is_day: !self.night,
-            temperature: units.to_celsius(self.temperature),
+    /// The weather now as given, and five days of made-up forecast from
+    /// today, through several conditions, around the given temperature.
+    pub fn report(&self, units: Units) -> Report {
+        let temperature = units.to_celsius(self.temperature);
+        let today = Local::now().date_naive();
+        let forecast = [
+            (self.condition, 2.0),
+            (Condition::PartlyCloudy, 3.5),
+            (Condition::Rain, -1.0),
+            (Condition::Cloudy, 0.5),
+            (Condition::Snow, -6.0),
+        ];
+        let days = forecast
+            .into_iter()
+            .zip(0..)
+            .map(|((condition, warmer), i)| Day {
+                date: today + Days::new(i),
+                condition: Some(condition),
+                high: temperature + warmer,
+                low: temperature + warmer - 8.0,
+            })
+            .collect();
+        Report {
+            current: Weather {
+                condition: Some(self.condition),
+                is_day: !self.night,
+                temperature,
+            },
+            days,
         }
     }
 }
@@ -65,13 +90,16 @@ mod tests {
     #[test]
     fn parses_fake_weather() {
         let fake = parse_fake_weather("partly-cloudy,57,night").unwrap();
-        let weather = fake.weather(Units::Fahrenheit);
+        let report = fake.report(Units::Fahrenheit);
+        assert_eq!(report.days.len(), 5);
+        assert_eq!(report.days[0].date, Local::now().date_naive());
+        let weather = report.current;
         assert_eq!(weather.condition, Some(Condition::PartlyCloudy));
         assert!(!weather.is_day);
         assert!((weather.temperature - 13.89).abs() < 0.01);
 
         let fake = parse_fake_weather("Rain,-3").unwrap();
-        let weather = fake.weather(Units::Celsius);
+        let weather = fake.report(Units::Celsius).current;
         assert_eq!(weather.condition, Some(Condition::Rain));
         assert!(weather.is_day);
         assert_eq!(weather.temperature, -3.0);

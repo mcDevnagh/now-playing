@@ -3,9 +3,10 @@
 A full-screen "Now Playing" screen for a [Snapcast] client. It shows the
 title, artists, album, cover art and progress of whatever the client is
 playing along the bottom quarter of the screen, over a blurred, darkened
-copy of the cover. The time is always shown in the top left, and the
-current weather in the top right; when nothing is playing, they're all
-there is, on black.
+copy of the cover. The time is always shown in the top left, the current
+weather in the top right, and the next five days' forecast, from today,
+across the middle; when nothing is playing, they're all there is, on
+black.
 
 It's built for a TV on a Linux HTPC, launched from Steam's Gaming Mode
 (gamescope), but runs on any Linux desktop with SDL3.
@@ -40,13 +41,15 @@ the front when music starts, Kodi to the front when Kodi plays, and
   progress bar while playing, and otherwise once a minute for the clock. It goes quiet when another window, such as
   a game, is in front. Changes fade over 400 ms.
 - If the connection drops, it reconnects with backoff, up to 30 s apart.
-- The weather comes from [Open-Meteo], every 15 minutes, for
+- The weather and the daily forecast come from [Open-Meteo], every 15
+  minutes, for
   `--latitude` and `--longitude`. Without them, it asks [IP.SB] once at
   start where the machine's public IP address is, and logs the city and
   coordinates it got. That's usually a nearby city, and wrong behind a
   VPN; pass the options to correct it. If fetching fails it retries,
   from 30 s up to 15 minutes apart, and after an hour without weather it
-  stops showing the old one. The icons are [Breezy Weather]'s.
+  stops showing the old one. The icons are [Breezy Weather]'s; the
+  forecast always uses the day ones.
 - Privacy: Open-Meteo is sent the coordinates, and, without them, IP.SB
   sees the IP address; nothing else leaves the machine for the weather.
   See [Open-Meteo's terms] and [IP.SB's privacy policy].
@@ -91,7 +94,8 @@ out:
   of connecting, with its original timing. A media key logs the line it
   would send to the replay's stream.
 - `--fake-weather CONDITION,TEMP[,night]` shows that weather in the top
-  right instead of fetching it, e.g. `partly-cloudy,57,night`: one of `clear`, `partly-cloudy`,
+  right, and a made-up forecast starting with it, instead of fetching
+  them, e.g. `partly-cloudy,57,night`: one of `clear`, `partly-cloudy`,
   `cloudy`, `rain`, `snow`, `wind`, `fog`, `haze`, `sleet`, `hail`,
   `thunder` or `thunderstorm`, the temperature in `--units`, and `night`
   for the night icons (only clear and partly cloudy have them).
@@ -302,7 +306,7 @@ now-playing-placeholder [--image PATH] [--title TITLE]
 | `core/tests/fixtures/` | Captured and hand-written snapserver logs |
 | `app/` | The `now-playing` crate: the full-screen app |
 | `app/src/ui/` | The window, and the text and textures it draws with |
-| `app/src/ui/components/` | The parts of the screen: background, time, weather and metadata |
+| `app/src/ui/components/` | The parts of the screen: background, time, weather, forecast and metadata |
 | `app/src/weather/` | The current weather, and fetching it from Open-Meteo |
 | `app/src/art/` | Fetching and decoding covers |
 | `app/src/debug/` | `--print`, `--fake` and `--fake-weather`, debug builds only |

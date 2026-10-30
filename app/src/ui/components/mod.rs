@@ -3,11 +3,13 @@
 //! box.
 
 pub mod background;
+pub mod forecast;
 pub mod metadata;
 pub mod time;
 pub mod weather;
 
 pub use background::Background;
+pub use forecast::Forecast;
 pub use metadata::{Metadata, cover_side};
 pub use time::{Time, until_next_minute};
 pub use weather::Weather;
@@ -110,6 +112,8 @@ pub struct Regions {
     pub time: Bounds,
     /// The right half of the top quarter.
     pub weather: Bounds,
+    /// The middle half, between the top and bottom quarters.
+    pub forecast: Bounds,
     /// The bottom quarter.
     pub metadata: Bounds,
 }
@@ -126,6 +130,11 @@ impl Regions {
             weather: Bounds {
                 x: top.x + half,
                 w: half,
+                ..top
+            },
+            forecast: Bounds {
+                y: top.y + top.h,
+                h: screen.h * (1.0 - TOP_BAND - METADATA_BAND),
                 ..top
             },
             metadata: screen.bottom(METADATA_BAND).inset(margin, 0.0),

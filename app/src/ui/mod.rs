@@ -1,4 +1,5 @@
 mod components;
+mod icons;
 mod keys;
 mod text;
 mod texture;

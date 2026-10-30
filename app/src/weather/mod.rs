@@ -6,6 +6,7 @@ pub mod open_meteo;
 
 pub use follow::{EVERY, STALE, Schedule, Source, follow};
 
+use chrono::NaiveDate;
 use clap::ValueEnum;
 
 /// Where to show the weather for.
@@ -40,6 +41,25 @@ pub struct Weather {
     pub is_day: bool,
     /// In °C, as sources report it; converted for display.
     pub temperature: f32,
+}
+
+/// One day's forecast.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Day {
+    /// The date where the weather is.
+    pub date: NaiveDate,
+    /// The day's main condition; None as for `Weather`.
+    pub condition: Option<Condition>,
+    /// In °C.
+    pub high: f32,
+    pub low: f32,
+}
+
+/// The weather now, and the next few days' forecast, today first.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Report {
+    pub current: Weather,
+    pub days: Vec<Day>,
 }
 
 /// The units temperatures are shown in.
