@@ -1,6 +1,6 @@
-//! Today's forecast, right-aligned: its icon, then two small lines, the
-//! date and the high and low, together about one line of the clock's text
-//! high.
+//! Today's forecast, right-aligned: two small lines, the date and the high
+//! and low, together about one line of the clock's text high, then its
+//! icon.
 
 use std::rc::Rc;
 
@@ -63,35 +63,36 @@ fn small_face(fonts: &Fonts, height: f32) -> Face<'_> {
     Face::new(&fonts.regular, SMALL * TOP_TEXT_SIZE * height)
 }
 
-/// The icon, then the two lines left-aligned to its right, the whole
-/// right-aligned in the bounds. The icon and the pair of lines are both
-/// centred on the clock's digits, so all three line up.
+/// The icon on the bounds' right edge, the two lines right-aligned to its
+/// left, mirroring the current weather on the left. The icon and the pair
+/// of lines are both centred on the clock's digits, so all three line up.
 pub fn layout(fonts: &Fonts, day: &Day, units: Units, bounds: Bounds) -> Layout {
     let clock = Face::new(&fonts.regular, TOP_TEXT_SIZE * bounds.h);
     let middle = bounds.y + (bounds.h - clock.height()) / 2.0 + clock.middle_of('0');
     let face = small_face(fonts, bounds.h);
     let date = date_text(day.date);
     let high_low = high_low_text(day, units);
-    let text_width = face.width(&date).max(face.width(&high_low));
     let side = ICON_SIZE * bounds.h;
-    let icon_width = match day.condition {
-        Some(_) => side + GAP * bounds.h,
-        None => 0.0,
+    let right = bounds.x + bounds.w;
+    let text_right = match day.condition {
+        Some(_) => right - side - GAP * bounds.h,
+        None => right,
     };
-    let left = bounds.x + bounds.w - (icon_width + text_width);
-    let text_x = left + icon_width;
     let gap = LINE_GAP * bounds.h;
     let top = middle - (2.0 * face.height() + gap) / 2.0;
-    let line = |text: String, y: f32| Line {
-        width: face.width(&text),
-        height: face.height(),
-        x: text_x,
-        y,
-        text,
+    let line = |text: String, y: f32| {
+        let width = face.width(&text);
+        Line {
+            x: text_right - width,
+            width,
+            height: face.height(),
+            y,
+            text,
+        }
     };
     let icon = day.condition.map(|condition| {
         let place = Bounds {
-            x: left,
+            x: right - side,
             y: middle - side / 2.0,
             w: side,
             h: side,

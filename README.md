@@ -4,9 +4,9 @@ A full-screen "Now Playing" screen for a [Snapcast] client. It shows the
 title, artists, album, cover art and progress of whatever the client is
 playing along the bottom quarter of the screen, over a blurred, darkened
 copy of the cover. The current weather is always shown in the top left,
-the time in the top middle, and today's forecast in the top right: its
-icon, the date (e.g. `Fri 10/30`), and the high and low. When nothing is
-playing, they're all there is, on black.
+the time in the top middle, and today's forecast in the top right: the
+date (e.g. `Fri 10/30`) and the high and low, then its icon. When nothing
+is playing, they're all there is, on black.
 
 It's built for a TV on a Linux HTPC, launched from Steam's Gaming Mode
 (gamescope), but runs on any Linux desktop with SDL3.

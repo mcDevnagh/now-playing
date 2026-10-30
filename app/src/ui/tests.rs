@@ -379,12 +379,11 @@ fn forecast_layout() {
     assert!((place.y - current.y).abs() < 0.01);
     assert!(inside(bounds, place.x, place.y, place.w, place.h));
 
-    // The lines: left-aligned right of the icon, the wider one's right edge
-    // on the bounds' right edge.
-    assert_eq!(l.date.x, l.high_low.x);
-    assert!(l.date.x > place.x + place.w);
-    let right = l.date.x + l.date.width.max(l.high_low.width);
-    assert!((right - (bounds.x + bounds.w)).abs() < 0.01);
+    // The icon on the right edge, the lines right-aligned to its left.
+    assert!((place.x + place.w - (bounds.x + bounds.w)).abs() < 0.01);
+    let right = l.date.x + l.date.width;
+    assert!((right - (l.high_low.x + l.high_low.width)).abs() < 0.01);
+    assert!(right < place.x);
     // One above the other, together about one line of the clock's text,
     // and centred on the icon.
     let clock = Face::new(&fonts.regular, 0.4 * bounds.h).height();
@@ -401,11 +400,12 @@ fn forecast_layout() {
         );
     }
 
-    // Without a condition, just the lines, still right-aligned.
+    // Without a condition, just the lines, right-aligned to the edge.
     let l = forecast::layout(&fonts, &day(date(30), None), Units::Fahrenheit, bounds);
     assert_eq!(l.icon, None);
-    let right = l.date.x + l.date.width.max(l.high_low.width);
-    assert!((right - (bounds.x + bounds.w)).abs() < 0.01);
+    for line in [&l.date, &l.high_low] {
+        assert!((line.x + line.width - (bounds.x + bounds.w)).abs() < 0.01);
+    }
 }
 
 #[test]
