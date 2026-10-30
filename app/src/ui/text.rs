@@ -52,6 +52,13 @@ impl<'a> Face<'a> {
         self.line_metrics().new_line_size
     }
 
+    /// How far below the top of a rasterised line the middle of `c`'s ink
+    /// is: to centre something on, say, a line of digits.
+    pub fn middle_of(&self, c: char) -> f32 {
+        let glyph = self.font.metrics(c, self.px);
+        self.line_metrics().ascent - (glyph.ymin as f32 + glyph.height as f32 / 2.0)
+    }
+
     pub fn width(&self, text: &str) -> f32 {
         let mut prev = None;
         let mut width = 0.0;

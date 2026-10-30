@@ -9,11 +9,7 @@ use sdl3::render::{Texture, WindowCanvas};
 
 use super::super::text::{Face, Fonts};
 use super::super::texture::{self, Creator};
-use super::{Bounds, alpha};
-
-/// The clock's size, as a fraction of its bounds' height.
-const SIZE: f32 = 0.4;
-const OPACITY: f32 = 0.85;
+use super::{Bounds, TOP_TEXT_OPACITY, TOP_TEXT_SIZE, alpha};
 
 /// `now` as the clock shows it, on a 12-hour clock, e.g. `9:05 am`.
 pub fn clock_text(now: &DateTime<Local>) -> String {
@@ -51,7 +47,7 @@ impl<'t> Time<'t> {
         now: &DateTime<Local>,
     ) -> Result<(), String> {
         let text = clock_text(now);
-        let face = Face::new(&self.fonts.regular, SIZE * bounds.h);
+        let face = Face::new(&self.fonts.regular, TOP_TEXT_SIZE * bounds.h);
         let current = self
             .drawn
             .as_ref()
@@ -61,7 +57,7 @@ impl<'t> Time<'t> {
             self.drawn = Some((text, bounds.h, texture));
         }
         let (_, _, texture) = self.drawn.as_mut().expect("clock just drawn");
-        texture.set_alpha_mod(alpha(OPACITY));
+        texture.set_alpha_mod(alpha(TOP_TEXT_OPACITY));
         let query = texture.query();
         let dst = SdlRect::new(
             bounds.x.round() as i32,

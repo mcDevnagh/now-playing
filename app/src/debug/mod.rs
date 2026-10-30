@@ -3,6 +3,8 @@
 
 mod print;
 mod replay;
+mod weather;
 
 pub use print::printer;
 pub use replay::replay;
+pub use weather::{FakeWeather, parse_fake_weather};

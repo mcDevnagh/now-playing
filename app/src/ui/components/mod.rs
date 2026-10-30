@@ -5,21 +5,28 @@
 pub mod background;
 pub mod metadata;
 pub mod time;
+pub mod weather;
 
 pub use background::Background;
 pub use metadata::{Metadata, cover_side};
 pub use time::{Time, until_next_minute};
+pub use weather::Weather;
 
 use sdl3::rect::Rect as SdlRect;
 use sdl3::render::WindowCanvas;
 
-/// How much of the screen's height the time takes, from the top.
-const TIME_BAND: f32 = 0.25;
+/// How much of the screen's height the time and weather take, from the
+/// top.
+const TOP_BAND: f32 = 0.25;
 /// How much of the screen's height the metadata takes, from the bottom.
 const METADATA_BAND: f32 = 0.25;
-/// The space between the screen's sides and the time and metadata, as a
-/// fraction of the screen's width.
+/// The space between the screen's sides and the components along them, as
+/// a fraction of the screen's width.
 const MARGIN: f32 = 0.05;
+/// The size of the text in the top band, the time's and the weather's, as
+/// a fraction of their bounds' height, so the two match.
+const TOP_TEXT_SIZE: f32 = 0.4;
+const TOP_TEXT_OPACITY: f32 = 0.85;
 
 /// A rectangle in pixels, from its top left.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -99,8 +106,10 @@ impl Bounds {
 pub struct Regions {
     /// All of it, behind the others.
     pub background: Bounds,
-    /// The top quarter, left-aligned.
+    /// The left half of the top quarter.
     pub time: Bounds,
+    /// The right half of the top quarter.
+    pub weather: Bounds,
     /// The bottom quarter.
     pub metadata: Bounds,
 }
@@ -109,9 +118,16 @@ impl Regions {
     pub fn new(size: (u32, u32)) -> Regions {
         let screen = Bounds::screen(size);
         let margin = MARGIN * screen.w;
+        let top = screen.top(TOP_BAND).inset(margin, 0.0);
+        let half = top.w / 2.0;
         Regions {
             background: screen,
-            time: screen.top(TIME_BAND).inset(margin, 0.0),
+            time: Bounds { w: half, ..top },
+            weather: Bounds {
+                x: top.x + half,
+                w: half,
+                ..top
+            },
             metadata: screen.bottom(METADATA_BAND).inset(margin, 0.0),
         }
     }

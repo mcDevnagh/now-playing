@@ -20,13 +20,14 @@ use sdl3::keyboard::{Keycode, Scancode};
 use sdl3::pixels::Color;
 use sdl3::render::{BlendMode, Texture, WindowCanvas};
 
-use super::components::{self, Background, Metadata, Regions, Time};
+use super::components::{self, Background, Metadata, Regions, Time, Weather};
 use super::keys::command_for;
 use super::text::Fonts;
 use super::texture::{self, Creator};
 use crate::art::{self, Cover, Fetcher};
 use crate::snapcast::Controller;
 use crate::state::{State, Track};
+use crate::weather::{self, Units};
 
 const TICK: Duration = Duration::from_secs(1);
 const FADE: Duration = Duration::from_millis(400);
@@ -81,10 +82,13 @@ impl Updates {
 /// Opens the window and runs until the user quits. `source` runs on its own
 /// thread and feeds states through the `Updates` it is given. The media keys
 /// go to `controller`. Covers whose host doesn't resolve are fetched from
-/// `art_host` instead.
+/// `art_host` instead. Temperatures are shown in `units`; `weather` is
+/// shown from the start.
 pub fn run(
     art_host: &str,
     controller: Controller,
+    units: Units,
+    weather: Option<weather::Weather>,
     source: impl FnOnce(Updates) + Send + 'static,
 ) -> Result<(), String> {
     sdl3::hint::set("SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS", "0");
@@ -130,7 +134,9 @@ pub fn run(
         creator: &creator,
         background: Background,
         time: Time::new(&creator, fonts.clone()),
+        weather: Weather::new(&creator, fonts.clone(), units),
         metadata: Metadata::new(&creator, fonts),
+        current_weather: weather,
         state: State::Idle,
         since: Instant::now(),
         art,
@@ -280,7 +286,9 @@ struct Screen<'t> {
     creator: &'t Creator,
     background: Background,
     time: Time<'t>,
+    weather: Weather<'t>,
     metadata: Metadata<'t>,
+    current_weather: Option<weather::Weather>,
     state: State,
     /// When `state` arrived, to advance the progress bar from its position.
     since: Instant,
@@ -308,8 +316,8 @@ struct Fade<'t> {
     start: Instant,
 }
 
-/// What a frame shows, ignoring the clock and progress bar: when this
-/// changes, the screen fades.
+/// What a frame shows, ignoring the clock, weather and progress bar: when
+/// this changes, the screen fades.
 #[derive(PartialEq)]
 enum Look<'a> {
     Black,
@@ -503,6 +511,8 @@ impl<'t> Screen<'t> {
                 .draw(canvas, regions.metadata, &track, image, progress, opacity)?;
         }
         self.time.draw(canvas, regions.time, &Local::now())?;
+        self.weather
+            .draw(canvas, regions.weather, self.current_weather.as_ref())?;
         if let Some(fade) = &mut self.fade {
             let done = fade.start.elapsed().as_secs_f32() / FADE.as_secs_f32();
             if done < 1.0 {

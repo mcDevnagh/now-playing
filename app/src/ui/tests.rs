@@ -4,9 +4,11 @@ use chrono::{Local, TimeZone};
 
 use super::components::metadata::{Style, cover_side, layout, same_layout};
 use super::components::time::{clock_text, until_next_minute};
+use super::components::weather::{self as weather_component, Icon, temperature_text};
 use super::components::{Bounds, Regions};
 use super::text::{Face, Fonts};
 use crate::state::Track;
+use crate::weather::{Condition, Units, Weather};
 
 const SCREEN: (f32, f32) = (1920.0, 1080.0);
 const LONG_TITLE: &str =
@@ -82,13 +84,17 @@ fn regions_split_the_screen() {
     let (w, h) = SCREEN;
     let r = Regions::new((w as u32, h as u32));
     assert_eq!(r.background, Bounds::screen((w as u32, h as u32)));
-    // The time in the top quarter, the metadata in the bottom quarter, with
-    // the same margins at the sides.
+    // The time and weather side by side in the top quarter, the metadata
+    // in the bottom quarter, with the same margins at the sides.
     assert_eq!((r.time.y, r.time.h), (0.0, 0.25 * h));
+    assert_eq!((r.weather.y, r.weather.h), (0.0, 0.25 * h));
     assert_eq!((r.metadata.y, r.metadata.h), (0.75 * h, 0.25 * h));
     assert_eq!(r.time.x, r.metadata.x);
-    assert_eq!(r.time.w, r.metadata.w);
-    assert!(r.time.x > 0.0 && r.time.x + r.time.w < w);
+    assert_eq!(r.time.x + r.time.w, r.weather.x);
+    assert_eq!(r.time.w, r.weather.w);
+    assert_eq!(r.weather.x + r.weather.w, r.metadata.x + r.metadata.w);
+    assert!(r.time.x > 0.0);
+    assert_eq!(r.time.x, w - (r.weather.x + r.weather.w));
 }
 
 fn inside(outer: Bounds, x: f32, y: f32, w: f32, h: f32) -> bool {
@@ -220,4 +226,78 @@ fn media_keys_send_commands() {
         assert_eq!(command_for(Some(other)), None, "{other}");
     }
     assert_eq!(command_for(None), None);
+}
+
+#[test]
+fn every_condition_has_an_icon_and_every_icon_decodes() {
+    use clap::ValueEnum;
+
+    for &condition in Condition::value_variants() {
+        for is_day in [true, false] {
+            let icon = Icon::new(condition, is_day);
+            assert!(Icon::ALL.contains(&icon), "{condition:?}");
+        }
+    }
+    assert_eq!(Icon::new(Condition::Clear, false), Icon::ClearNight);
+    assert_eq!(
+        Icon::new(Condition::PartlyCloudy, true),
+        Icon::PartlyCloudyDay
+    );
+    assert_eq!(Icon::new(Condition::Rain, false), Icon::Rain);
+    for icon in Icon::ALL {
+        let image = icon.decode().unwrap_or_else(|e| panic!("{icon:?}: {e}"));
+        assert_eq!((image.width, image.height), (256, 256), "{icon:?}");
+        assert_eq!(image.rgba.len(), 256 * 256 * 4);
+    }
+}
+
+#[test]
+fn temperatures_are_rounded_in_the_chosen_units() {
+    assert_eq!(temperature_text(12.8, Units::Fahrenheit), "55°");
+    assert_eq!(temperature_text(12.8, Units::Celsius), "13°");
+    assert_eq!(temperature_text(-0.4, Units::Celsius), "0°");
+    assert_eq!(temperature_text(-17.9, Units::Fahrenheit), "0°");
+    assert_eq!(temperature_text(-12.0, Units::Celsius), "-12°");
+    assert_eq!(temperature_text(-30.0, Units::Fahrenheit), "-22°");
+    let f = Units::Fahrenheit;
+    assert!((f.to_celsius(f.from_celsius(21.5)) - 21.5).abs() < 1e-4);
+}
+
+fn weather_bounds() -> Bounds {
+    Regions::new((SCREEN.0 as u32, SCREEN.1 as u32)).weather
+}
+
+#[test]
+fn weather_layout_is_right_aligned() {
+    let fonts = Fonts::load();
+    let bounds = weather_bounds();
+    let weather = Weather {
+        condition: Some(Condition::PartlyCloudy),
+        is_day: false,
+        temperature: 14.0,
+    };
+    let l = weather_component::layout(&fonts, &weather, Units::Fahrenheit, bounds);
+    assert_eq!(l.text, "57°");
+    assert!((l.text_x + l.text_width - (bounds.x + bounds.w)).abs() < 0.01);
+    let (icon, place) = l.icon.expect("icon");
+    assert_eq!(icon, Icon::PartlyCloudyNight);
+    assert_eq!(place.w, place.h);
+    assert!(place.x + place.w < l.text_x, "{place:?} overlaps the text");
+    assert!(inside(bounds, place.x, place.y, place.w, place.h));
+    // On the same line as the clock: both text boxes start at the same y.
+    let clock = Face::new(&fonts.regular, 0.4 * bounds.h);
+    assert!((l.text_y - (bounds.y + (bounds.h - clock.height()) / 2.0)).abs() < 0.01);
+}
+
+#[test]
+fn weather_without_a_condition_is_just_the_temperature() {
+    let fonts = Fonts::load();
+    let weather = Weather {
+        condition: None,
+        is_day: true,
+        temperature: 20.0,
+    };
+    let l = weather_component::layout(&fonts, &weather, Units::Celsius, weather_bounds());
+    assert_eq!(l.icon, None);
+    assert_eq!(l.text, "20°");
 }

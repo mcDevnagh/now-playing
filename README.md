@@ -43,13 +43,16 @@ the front when music starts, Kodi to the front when Kodi plays, and
 ## Usage
 
 ```
-now-playing [--server HOST:PORT] [--client ID]
+now-playing [--server HOST:PORT] [--client ID] [--units UNITS]
 ```
 
 - `--server`: snapserver's JSON-RPC address. The built-in default is a
   LAN address; pass your own.
 - `--client`: the Snapcast client to follow, by id or host name. Defaults
   to this machine's hostname.
+- `--units`: `fahrenheit` (the default) or `celsius`, for the weather's
+  temperature. The weather isn't fetched yet, so for now it only shows
+  with `--fake-weather` in debug builds.
 
 The media keys play or pause, skip to the next track and go back to the
 previous one, while the window is in front. A key that isn't sent,
@@ -61,13 +64,18 @@ button leaves it running in the background.
 
 ### Debug builds
 
-Debug builds add two options, and a key log, that release builds leave
+Debug builds add three options, and a key log, that release builds leave
 out:
 
 - `--print` prints state changes instead of opening the window.
 - `--fake LOG` replays a captured log from `core/tests/fixtures/` instead
   of connecting, with its original timing. A media key logs the line it
   would send to the replay's stream.
+- `--fake-weather CONDITION,TEMP[,night]` shows that weather in the top
+  right, e.g. `partly-cloudy,57,night`: one of `clear`, `partly-cloudy`,
+  `cloudy`, `rain`, `snow`, `wind`, `fog`, `haze`, `sleet`, `hail`,
+  `thunder` or `thunderstorm`, the temperature in `--units`, and `night`
+  for the night icons (only clear and partly cloudy have them).
 - Keys the window doesn't handle are logged to stderr with their SDL
   keycode and scancode and the platform's raw code, to find what a
   remote's buttons send.
@@ -274,10 +282,13 @@ now-playing-placeholder [--image PATH] [--title TITLE]
 | `core/src/net.rs` | TCP keepalive and reconnect backoff |
 | `core/tests/fixtures/` | Captured and hand-written snapserver logs |
 | `app/` | The `now-playing` crate: the full-screen app |
-| `app/src/ui/` | The window, text layout and drawing |
+| `app/src/ui/` | The window, and the text and textures it draws with |
+| `app/src/ui/components/` | The parts of the screen: background, time, weather and metadata |
+| `app/src/weather/` | The current weather, as the screen shows it |
 | `app/src/art/` | Fetching and decoding covers |
-| `app/src/debug/` | `--print` and `--fake`, debug builds only |
+| `app/src/debug/` | `--print`, `--fake` and `--fake-weather`, debug builds only |
 | `app/assets/fonts/` | The bundled Noto Sans fonts |
+| `app/assets/weather/` | The bundled weather icons, from Breezy Weather |
 | `switcher/` | The `now-playing-switcher` crate: brings players to the front |
 | `switcher/src/listener/` | Following Kodi, Snapcast and UxPlay for starts |
 | `switcher/src/action.rs` | Deciding whether to skip, focus or launch |
@@ -295,3 +306,8 @@ GPL-3.0-or-later; see `LICENSE`.
 
 The bundled Noto Sans fonts are under the SIL Open Font License 1.1; see
 `app/assets/fonts/OFL.txt`.
+
+The bundled weather icons are [Breezy Weather]'s, unchanged, under the
+GNU LGPL 3.0 with additional terms; see `app/assets/weather/`.
+
+[Breezy Weather]: https://github.com/breezy-weather/breezy-weather
