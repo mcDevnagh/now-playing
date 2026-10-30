@@ -2,8 +2,7 @@ use std::time::Duration;
 
 use chrono::{Local, TimeZone};
 
-use super::components::date::{self as date_component, date_text};
-use super::components::forecast::{self, day_text, high_low_text};
+use super::components::forecast::{self, date_text, high_low_text};
 use super::components::metadata::{Style, cover_side, layout, same_layout};
 use super::components::time::{clock_text, until_next_minute};
 use super::components::weather::{self as weather_component, temperature_text};
@@ -87,25 +86,21 @@ fn regions_split_the_screen() {
     let (w, h) = SCREEN;
     let r = Regions::new((w as u32, h as u32));
     assert_eq!(r.background, Bounds::screen((w as u32, h as u32)));
-    // The time and date side by side in the top quarter, the metadata in
-    // the bottom quarter, with the same margins at the sides.
+    // The time and forecast side by side in the top quarter, the metadata
+    // in the bottom quarter, with the same margins at the sides.
     assert_eq!((r.time.y, r.time.h), (0.0, 0.25 * h));
-    assert_eq!((r.date.y, r.date.h), (0.0, 0.25 * h));
+    assert_eq!((r.forecast.y, r.forecast.h), (0.0, 0.25 * h));
     assert_eq!((r.metadata.y, r.metadata.h), (0.75 * h, 0.25 * h));
     assert_eq!(r.time.x, r.metadata.x);
-    assert_eq!(r.time.x + r.time.w, r.date.x);
-    assert_eq!(r.time.w, r.date.w);
-    assert_eq!(r.date.x + r.date.w, r.metadata.x + r.metadata.w);
+    assert_eq!(r.time.x + r.time.w, r.forecast.x);
+    assert_eq!(r.time.w, r.forecast.w);
+    assert_eq!(r.forecast.x + r.forecast.w, r.metadata.x + r.metadata.w);
     assert!(r.time.x > 0.0);
-    assert_eq!(r.time.x, w - (r.date.x + r.date.w));
+    assert_eq!(r.time.x, w - (r.forecast.x + r.forecast.w));
     // The weather spans the top quarter, overlapping both.
     assert_eq!(r.weather.x, r.time.x);
-    assert_eq!(r.weather.x + r.weather.w, r.date.x + r.date.w);
+    assert_eq!(r.weather.x + r.weather.w, r.forecast.x + r.forecast.w);
     assert_eq!((r.weather.y, r.weather.h), (0.0, 0.25 * h));
-    // The forecast fills the middle half, between them, at the same margins.
-    assert_eq!((r.forecast.y, r.forecast.h), (0.25 * h, 0.5 * h));
-    assert_eq!(r.forecast.x, r.metadata.x);
-    assert_eq!(r.forecast.w, r.metadata.w);
 }
 
 fn inside(outer: Bounds, x: f32, y: f32, w: f32, h: f32) -> bool {
@@ -321,139 +316,95 @@ fn date(day: u32) -> chrono::NaiveDate {
     chrono::NaiveDate::from_ymd_opt(2026, 10, day).unwrap()
 }
 
-fn days(conditions: &[Condition]) -> Vec<Day> {
-    conditions
-        .iter()
-        .zip(25..)
-        .map(|(&condition, day)| Day {
-            date: date(day),
-            condition: Some(condition),
-            high: 15.0,
-            low: 5.0,
-        })
-        .collect()
+fn day(date: chrono::NaiveDate, condition: Option<Condition>) -> Day {
+    Day {
+        date,
+        condition,
+        high: 16.1,
+        low: 7.8,
+    }
 }
 
 #[test]
-fn the_forecast_starts_today_and_shows_five_days() {
-    use Condition::*;
-
-    let week = days(&[Rain, Clear, Cloudy, Snow, Fog, Rain, Clear]); // 25th to 31st
-    let shown = forecast::from(&week, date(25));
-    assert_eq!(shown.len(), forecast::DAYS);
-    assert_eq!(shown[0].date, date(25));
-    // After midnight, before the next fetch: today is still first.
-    let shown = forecast::from(&week, date(27));
-    assert_eq!(shown[0].date, date(27));
-    assert_eq!(shown.len(), 5);
-    assert_eq!(forecast::from(&week, date(30)).len(), 2);
-    assert!(forecast::from(&week, date(31) + chrono::Days::new(1)).is_empty());
+fn the_forecast_is_todays() {
+    let week: Vec<_> = (28..=31)
+        .map(|d| day(date(d), Some(Condition::Rain)))
+        .collect();
+    assert_eq!(forecast::today(&week, date(29)).unwrap().date, date(29));
+    // None for today: nothing, rather than another day's.
+    assert_eq!(forecast::today(&week, date(27)), None);
+    assert_eq!(forecast::today(&week[1..], date(28)), None);
 }
 
 #[test]
 fn forecast_text() {
-    assert_eq!(day_text(date(28), date(28)), "Today");
-    assert_eq!(day_text(date(29), date(28)), "Thu");
-    assert_eq!(day_text(date(30), date(28)), "Fri");
-    assert_eq!(day_text(date(28), date(27)), "Wed");
-    let day = Day {
-        date: date(30),
-        condition: None,
+    assert_eq!(date_text(date(30)), "Fri 10/30");
+    let ymd = |y, m, d| chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap();
+    assert_eq!(date_text(ymd(2026, 11, 5)), "Thu 11/5");
+    assert_eq!(date_text(ymd(2027, 1, 1)), "Fri 1/1");
+    let cold = Day {
         high: 16.1,
         low: -0.2,
+        ..day(date(30), None)
     };
-    assert_eq!(high_low_text(&day, Units::Fahrenheit), "61°/32°");
-    assert_eq!(high_low_text(&day, Units::Celsius), "16°/0°");
+    assert_eq!(high_low_text(&cold, Units::Fahrenheit), "61° / 32°");
+    assert_eq!(high_low_text(&cold, Units::Celsius), "16° / 0°");
 }
 
 #[test]
 fn forecast_layout() {
-    use Condition::*;
-
     let fonts = Fonts::load();
     let regions = Regions::new((SCREEN.0 as u32, SCREEN.1 as u32));
     let bounds = regions.forecast;
-    let week = days(&[Clear, PartlyCloudy, Rain, Cloudy, Snow, Fog, Rain]);
-    let columns = forecast::layout(
-        &fonts,
-        forecast::from(&week, date(25)),
-        date(25),
-        Units::Fahrenheit,
-        bounds,
-    );
-    assert_eq!(columns.len(), 5);
-    let names: Vec<_> = columns.iter().map(|c| c.day.text.as_str()).collect();
-    assert_eq!(names, ["Today", "Mon", "Tue", "Wed", "Thu"]);
-    assert_eq!(columns[0].high_low.text, "59°/41°");
+    let today = day(date(30), Some(Condition::PartlyCloudy));
+    let l = forecast::layout(&fonts, &today, Units::Fahrenheit, bounds);
+    assert_eq!(l.date.text, "Fri 10/30");
+    assert_eq!(l.high_low.text, "61° / 46°");
 
-    // The same size as the current weather's icon.
+    // The icon: a day one, the same size as the current weather's, and on
+    // the same middle.
+    let (icon, place) = l.icon.expect("icon");
+    assert_eq!(icon, Icon::PartlyCloudyDay);
     let current = weather_component::layout(
         &fonts,
         &Weather {
-            condition: Some(Clear),
-            is_day: true,
+            condition: Some(Condition::Clear),
+            is_day: false,
             temperature: 15.0,
         },
         Units::Fahrenheit,
         regions.weather,
     );
-    let current_side = current.icon.unwrap().1.w;
+    let current = current.icon.unwrap().1;
+    assert!((place.w - current.w).abs() < 0.01);
+    assert!((place.y - current.y).abs() < 0.01);
+    assert!(inside(bounds, place.x, place.y, place.w, place.h));
 
-    let mut previous_centre = bounds.x;
-    for column in &columns {
-        let (icon, place) = column.icon.expect("icon");
-        assert!((place.w - current_side).abs() < 0.01);
-        // Day above, the icon, then high and low; all centred together.
-        let centre = place.x + place.w / 2.0;
-        for line in [&column.day, &column.high_low] {
-            assert!(
-                (line.x + line.width / 2.0 - centre).abs() < 0.01,
-                "{line:?}"
-            );
-            assert!(inside(bounds, line.x, line.y, line.width, 1.0), "{line:?}");
-        }
-        assert!(column.day.y < place.y);
-        assert!(column.high_low.y > place.y + place.h - 1.0);
-        assert!(inside(bounds, place.x, place.y, place.w, place.h));
-        assert!(centre > previous_centre);
-        previous_centre = centre;
-        // Never a night icon.
-        assert!(!matches!(icon, Icon::ClearNight | Icon::PartlyCloudyNight));
+    // The lines: left-aligned right of the icon, the wider one's right edge
+    // on the bounds' right edge.
+    assert_eq!(l.date.x, l.high_low.x);
+    assert!(l.date.x > place.x + place.w);
+    let right = l.date.x + l.date.width.max(l.high_low.width);
+    assert!((right - (bounds.x + bounds.w)).abs() < 0.01);
+    // One above the other, together about one line of the clock's text,
+    // and centred on the icon.
+    let clock = Face::new(&fonts.regular, 0.4 * bounds.h).height();
+    let block = l.high_low.y + l.high_low.height - l.date.y;
+    assert!(l.high_low.y > l.date.y + l.date.height);
+    assert!((block / clock - 1.0).abs() < 0.1, "{block} for {clock}");
+    let middle = (l.date.y + l.high_low.y + l.high_low.height) / 2.0;
+    assert!((middle - (place.y + place.h / 2.0)).abs() < 0.5);
+    for line in [&l.date, &l.high_low] {
+        assert!(line.height < clock / 2.0);
+        assert!(
+            inside(bounds, line.x, line.y, line.width, line.height),
+            "{line:?}"
+        );
     }
-    // Spread evenly: the first and last as far from the sides.
-    let first = columns[0].icon.unwrap().1;
-    let last = columns[4].icon.unwrap().1;
-    let left = first.x - bounds.x;
-    let right = bounds.x + bounds.w - (last.x + last.w);
-    assert!((left - right).abs() < 0.01);
-    // Today, the 25th, on the left.
-    assert_eq!(columns[0].icon.unwrap().0, Icon::ClearDay);
 
-    // Fewer days spread out too; none, nothing.
-    let two = forecast::layout(&fonts, &week[..2], date(25), Units::Fahrenheit, bounds);
-    assert_eq!(two.len(), 2);
-    assert!(forecast::layout(&fonts, &[], date(25), Units::Fahrenheit, bounds).is_empty());
-}
-
-#[test]
-fn the_date_is_day_month_and_day_of_month() {
-    assert_eq!(date_text(date(30)), "Fri 10/30");
-    let ymd = |y, m, d| chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap();
-    assert_eq!(date_text(ymd(2026, 11, 5)), "Thu 11/5");
-    assert_eq!(date_text(ymd(2027, 1, 1)), "Fri 1/1");
-}
-
-#[test]
-fn the_date_is_right_aligned_on_the_clocks_line() {
-    let fonts = Fonts::load();
-    let regions = Regions::new((SCREEN.0 as u32, SCREEN.1 as u32));
-    let bounds = regions.date;
-    let face = Face::new(&fonts.regular, 0.4 * bounds.h);
-    let text = date_text(date(30));
-    let (x, y) = date_component::place(&face, &text, bounds);
-    let width = face.width(&text);
-    assert!((x + width - (bounds.x + bounds.w)).abs() < 0.01);
-    assert_eq!(bounds.x + bounds.w, regions.metadata.x + regions.metadata.w);
-    let time = regions.time;
-    assert!((y - (time.y + (time.h - face.height()) / 2.0)).abs() < 0.01);
+    // Without a condition, just the lines, still right-aligned.
+    let l = forecast::layout(&fonts, &day(date(30), None), Units::Fahrenheit, bounds);
+    assert_eq!(l.icon, None);
+    let right = l.date.x + l.date.width.max(l.high_low.width);
+    assert!((right - (bounds.x + bounds.w)).abs() < 0.01);
 }

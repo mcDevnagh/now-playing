@@ -3,14 +3,12 @@
 //! box.
 
 pub mod background;
-pub mod date;
 pub mod forecast;
 pub mod metadata;
 pub mod time;
 pub mod weather;
 
 pub use background::Background;
-pub use date::Date;
 pub use forecast::Forecast;
 pub use metadata::{Metadata, cover_side};
 pub use time::{Time, until_next_minute};
@@ -27,7 +25,7 @@ const METADATA_BAND: f32 = 0.25;
 /// The space between the screen's sides and the components along them, as
 /// a fraction of the screen's width.
 const MARGIN: f32 = 0.05;
-/// The size of the text in the top band, the time's, date's and weather's, as
+/// The size of the text in the top band, the time's and weather's, as
 /// a fraction of their bounds' height, so the two match.
 const TOP_TEXT_SIZE: f32 = 0.4;
 const TOP_TEXT_OPACITY: f32 = 0.85;
@@ -113,11 +111,9 @@ pub struct Regions {
     /// The left half of the top quarter.
     pub time: Bounds,
     /// All of the top quarter, centred in it. It overlaps the time's and
-    /// the date's bounds, but not what they draw.
+    /// the forecast's bounds, but not what they draw.
     pub weather: Bounds,
     /// The right half of the top quarter.
-    pub date: Bounds,
-    /// The middle half, between the top and bottom quarters.
     pub forecast: Bounds,
     /// The bottom quarter.
     pub metadata: Bounds,
@@ -133,14 +129,9 @@ impl Regions {
             background: screen,
             time: Bounds { w: half, ..top },
             weather: top,
-            date: Bounds {
+            forecast: Bounds {
                 x: top.x + half,
                 w: half,
-                ..top
-            },
-            forecast: Bounds {
-                y: top.y + top.h,
-                h: screen.h * (1.0 - TOP_BAND - METADATA_BAND),
                 ..top
             },
             metadata: screen.bottom(METADATA_BAND).inset(margin, 0.0),

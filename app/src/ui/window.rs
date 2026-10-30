@@ -20,9 +20,7 @@ use sdl3::keyboard::{Keycode, Scancode};
 use sdl3::pixels::Color;
 use sdl3::render::{BlendMode, Texture, WindowCanvas};
 
-use super::components::{
-    self, Background, Date, Forecast, Metadata, Regions, Time, Weather, forecast,
-};
+use super::components::{self, Background, Forecast, Metadata, Regions, Time, Weather, forecast};
 use super::keys::command_for;
 use super::text::Fonts;
 use super::texture::{self, Creator};
@@ -166,7 +164,6 @@ pub fn run(
         creator: &creator,
         background: Background,
         time: Time::new(&creator, fonts.clone()),
-        date: Date::new(&creator, fonts.clone()),
         weather: Weather::new(&creator, fonts.clone(), units),
         forecast: Forecast::new(&creator, fonts.clone(), units),
         metadata: Metadata::new(&creator, fonts),
@@ -320,7 +317,6 @@ struct Screen<'t> {
     creator: &'t Creator,
     background: Background,
     time: Time<'t>,
-    date: Date<'t>,
     weather: Weather<'t>,
     forecast: Forecast<'t>,
     metadata: Metadata<'t>,
@@ -553,12 +549,11 @@ impl<'t> Screen<'t> {
         let now = Local::now();
         let today = now.date_naive();
         self.time.draw(canvas, regions.time, &now)?;
-        self.date.draw(canvas, regions.date, today)?;
         let report = self.report.as_ref();
         self.weather
             .draw(canvas, regions.weather, report.map(|r| &r.current))?;
-        let days = report.map_or(&[][..], |r| forecast::from(&r.days, today));
-        self.forecast.draw(canvas, regions.forecast, days, today)?;
+        let day = report.and_then(|r| forecast::today(&r.days, today));
+        self.forecast.draw(canvas, regions.forecast, day)?;
         if let Some(fade) = &mut self.fade {
             let done = fade.start.elapsed().as_secs_f32() / FADE.as_secs_f32();
             if done < 1.0 {

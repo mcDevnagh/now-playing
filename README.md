@@ -4,9 +4,9 @@ A full-screen "Now Playing" screen for a [Snapcast] client. It shows the
 title, artists, album, cover art and progress of whatever the client is
 playing along the bottom quarter of the screen, over a blurred, darkened
 copy of the cover. The time is always shown in the top left, the current
-weather in the top middle, the date (e.g. `Fri 10/30`) in the top right,
-and the next five days' forecast, from today, across the middle; when
-nothing is playing, they're all there is, on black.
+weather in the top middle, and today's forecast in the top right: its
+icon, the date (e.g. `Fri 10/30`), and the high and low. When nothing is
+playing, they're all there is, on black.
 
 It's built for a TV on a Linux HTPC, launched from Steam's Gaming Mode
 (gamescope), but runs on any Linux desktop with SDL3.
@@ -306,7 +306,7 @@ now-playing-placeholder [--image PATH] [--title TITLE]
 | `core/tests/fixtures/` | Captured and hand-written snapserver logs |
 | `app/` | The `now-playing` crate: the full-screen app |
 | `app/src/ui/` | The window, and the text and textures it draws with |
-| `app/src/ui/components/` | The parts of the screen: background, time, date, weather, forecast and metadata |
+| `app/src/ui/components/` | The parts of the screen: background, time, weather, forecast and metadata |
 | `app/src/weather/` | The current weather, and fetching it from Open-Meteo |
 | `app/src/art/` | Fetching and decoding covers |
 | `app/src/debug/` | `--print`, `--fake` and `--fake-weather`, debug builds only |

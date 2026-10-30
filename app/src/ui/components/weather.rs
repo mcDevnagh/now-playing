@@ -16,7 +16,7 @@ use crate::weather::{self as model, Units};
 pub const ICON_SIZE: f32 = 0.5;
 /// Between the icon and the temperature, as a fraction of the bounds'
 /// height. Small, as the icons have room around them.
-const GAP: f32 = 0.04;
+pub const GAP: f32 = 0.04;
 
 /// The temperature as shown, e.g. `57°`: rounded, in `units`.
 pub fn temperature_text(celsius: f32, units: Units) -> String {
