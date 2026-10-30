@@ -1,4 +1,4 @@
-//! The time of day.
+//! The time of day, centred.
 
 use std::rc::Rc;
 use std::time::Duration;
@@ -22,7 +22,15 @@ pub fn until_next_minute(now: &DateTime<Local>) -> Duration {
     Duration::from_secs(60).saturating_sub(into_minute)
 }
 
-/// The clock, left-aligned and vertically centred in its bounds.
+/// The top left of `text` in `face`, centred in `bounds`.
+pub fn place(face: &Face, text: &str, bounds: Bounds) -> (f32, f32) {
+    (
+        bounds.x + (bounds.w - face.width(text)) / 2.0,
+        bounds.y + (bounds.h - face.height()) / 2.0,
+    )
+}
+
+/// The clock, centred in its bounds.
 pub struct Time<'t> {
     creator: &'t Creator,
     fonts: Rc<Fonts>,
@@ -48,6 +56,7 @@ impl<'t> Time<'t> {
     ) -> Result<(), String> {
         let text = clock_text(now);
         let face = Face::new(&self.fonts.regular, TOP_TEXT_SIZE * bounds.h);
+        let (x, y) = place(&face, &text, bounds);
         let current = self
             .drawn
             .as_ref()
@@ -60,8 +69,8 @@ impl<'t> Time<'t> {
         texture.set_alpha_mod(alpha(TOP_TEXT_OPACITY));
         let query = texture.query();
         let dst = SdlRect::new(
-            bounds.x.round() as i32,
-            (bounds.y + (bounds.h - face.height()) / 2.0).round() as i32,
+            x.round() as i32,
+            y.round() as i32,
             query.width,
             query.height,
         );

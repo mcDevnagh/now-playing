@@ -4,7 +4,7 @@ use chrono::{Local, TimeZone};
 
 use super::components::forecast::{self, date_text, high_low_text};
 use super::components::metadata::{Style, cover_side, layout, same_layout};
-use super::components::time::{clock_text, until_next_minute};
+use super::components::time::{self as time_component, clock_text, until_next_minute};
 use super::components::weather::{self as weather_component, temperature_text};
 use super::components::{Bounds, Regions};
 use super::icons::Icon;
@@ -86,21 +86,21 @@ fn regions_split_the_screen() {
     let (w, h) = SCREEN;
     let r = Regions::new((w as u32, h as u32));
     assert_eq!(r.background, Bounds::screen((w as u32, h as u32)));
-    // The time and forecast side by side in the top quarter, the metadata
-    // in the bottom quarter, with the same margins at the sides.
-    assert_eq!((r.time.y, r.time.h), (0.0, 0.25 * h));
+    // The weather and forecast side by side in the top quarter, the
+    // metadata in the bottom quarter, with the same margins at the sides.
+    assert_eq!((r.weather.y, r.weather.h), (0.0, 0.25 * h));
     assert_eq!((r.forecast.y, r.forecast.h), (0.0, 0.25 * h));
     assert_eq!((r.metadata.y, r.metadata.h), (0.75 * h, 0.25 * h));
-    assert_eq!(r.time.x, r.metadata.x);
-    assert_eq!(r.time.x + r.time.w, r.forecast.x);
-    assert_eq!(r.time.w, r.forecast.w);
+    assert_eq!(r.weather.x, r.metadata.x);
+    assert_eq!(r.weather.x + r.weather.w, r.forecast.x);
+    assert_eq!(r.weather.w, r.forecast.w);
     assert_eq!(r.forecast.x + r.forecast.w, r.metadata.x + r.metadata.w);
-    assert!(r.time.x > 0.0);
-    assert_eq!(r.time.x, w - (r.forecast.x + r.forecast.w));
-    // The weather spans the top quarter, overlapping both.
-    assert_eq!(r.weather.x, r.time.x);
-    assert_eq!(r.weather.x + r.weather.w, r.forecast.x + r.forecast.w);
-    assert_eq!((r.weather.y, r.weather.h), (0.0, 0.25 * h));
+    assert!(r.weather.x > 0.0);
+    assert_eq!(r.weather.x, w - (r.forecast.x + r.forecast.w));
+    // The time spans the top quarter, overlapping both.
+    assert_eq!(r.time.x, r.weather.x);
+    assert_eq!(r.time.x + r.time.w, r.forecast.x + r.forecast.w);
+    assert_eq!((r.time.y, r.time.h), (0.0, 0.25 * h));
 }
 
 fn inside(outer: Bounds, x: f32, y: f32, w: f32, h: f32) -> bool {
@@ -274,7 +274,7 @@ fn weather_bounds() -> Bounds {
 }
 
 #[test]
-fn weather_layout_is_centred() {
+fn weather_layout_is_left_aligned() {
     let fonts = Fonts::load();
     let bounds = weather_bounds();
     let weather = Weather {
@@ -288,9 +288,8 @@ fn weather_layout_is_centred() {
     assert_eq!(icon, Icon::PartlyCloudyNight);
     assert_eq!(place.w, place.h);
     assert!(place.x + place.w < l.text_x, "{place:?} overlaps the text");
-    // Icon and text centred together, on the middle of the screen.
-    let middle = (place.x + l.text_x + l.text_width) / 2.0;
-    assert!((middle - SCREEN.0 / 2.0).abs() < 0.01, "{middle}");
+    // The icon on the left edge, at the metadata's margin.
+    assert_eq!(place.x, bounds.x);
     assert!(inside(bounds, place.x, place.y, place.w, place.h));
     // On the same line as the clock: both text boxes start at the same y.
     let clock = Face::new(&fonts.regular, 0.4 * bounds.h);
@@ -308,8 +307,8 @@ fn weather_without_a_condition_is_just_the_temperature() {
     let l = weather_component::layout(&fonts, &weather, Units::Celsius, weather_bounds());
     assert_eq!(l.icon, None);
     assert_eq!(l.text, "20°");
-    // Centred on its own.
-    assert!((l.text_x + l.text_width / 2.0 - SCREEN.0 / 2.0).abs() < 0.01);
+    // On the left edge on its own.
+    assert_eq!(l.text_x, weather_bounds().x);
 }
 
 fn date(day: u32) -> chrono::NaiveDate {
@@ -407,4 +406,29 @@ fn forecast_layout() {
     assert_eq!(l.icon, None);
     let right = l.date.x + l.date.width.max(l.high_low.width);
     assert!((right - (bounds.x + bounds.w)).abs() < 0.01);
+}
+
+#[test]
+fn the_clock_is_centred() {
+    let fonts = Fonts::load();
+    let regions = Regions::new((SCREEN.0 as u32, SCREEN.1 as u32));
+    let bounds = regions.time;
+    let face = Face::new(&fonts.regular, 0.4 * bounds.h);
+    for text in ["9:05 am", "12:30 pm"] {
+        let (x, y) = time_component::place(&face, text, bounds);
+        let centre = x + face.width(text) / 2.0;
+        assert!((centre - SCREEN.0 / 2.0).abs() < 0.01, "{text}: {centre}");
+        // On the weather's line.
+        let weather = weather_component::layout(
+            &fonts,
+            &Weather {
+                condition: None,
+                is_day: true,
+                temperature: 15.0,
+            },
+            Units::Fahrenheit,
+            regions.weather,
+        );
+        assert!((y - weather.text_y).abs() < 0.01);
+    }
 }

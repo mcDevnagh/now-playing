@@ -108,10 +108,10 @@ impl Bounds {
 pub struct Regions {
     /// All of it, behind the others.
     pub background: Bounds,
-    /// The left half of the top quarter.
-    pub time: Bounds,
-    /// All of the top quarter, centred in it. It overlaps the time's and
+    /// All of the top quarter, centred in it. It overlaps the weather's and
     /// the forecast's bounds, but not what they draw.
+    pub time: Bounds,
+    /// The left half of the top quarter.
     pub weather: Bounds,
     /// The right half of the top quarter.
     pub forecast: Bounds,
@@ -127,8 +127,8 @@ impl Regions {
         let half = top.w / 2.0;
         Regions {
             background: screen,
-            time: Bounds { w: half, ..top },
-            weather: top,
+            time: top,
+            weather: Bounds { w: half, ..top },
             forecast: Bounds {
                 x: top.x + half,
                 w: half,
