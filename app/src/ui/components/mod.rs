@@ -27,7 +27,7 @@ const METADATA_BAND: f32 = 0.25;
 /// The space between the screen's sides and the components along them, as
 /// a fraction of the screen's width.
 const MARGIN: f32 = 0.05;
-/// The size of the text in the top band, the time's and the weather's, as
+/// The size of the text in the top band, the time's, date's and weather's, as
 /// a fraction of their bounds' height, so the two match.
 const TOP_TEXT_SIZE: f32 = 0.4;
 const TOP_TEXT_OPACITY: f32 = 0.85;
@@ -113,10 +113,10 @@ pub struct Regions {
     /// The left half of the top quarter.
     pub time: Bounds,
     /// All of the top quarter, centred in it. It overlaps the time's and
-    /// the weather's bounds, but not what they draw.
-    pub date: Bounds,
-    /// The right half of the top quarter.
+    /// the date's bounds, but not what they draw.
     pub weather: Bounds,
+    /// The right half of the top quarter.
+    pub date: Bounds,
     /// The middle half, between the top and bottom quarters.
     pub forecast: Bounds,
     /// The bottom quarter.
@@ -132,8 +132,8 @@ impl Regions {
         Regions {
             background: screen,
             time: Bounds { w: half, ..top },
-            date: top,
-            weather: Bounds {
+            weather: top,
+            date: Bounds {
                 x: top.x + half,
                 w: half,
                 ..top

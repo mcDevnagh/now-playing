@@ -3,10 +3,10 @@
 A full-screen "Now Playing" screen for a [Snapcast] client. It shows the
 title, artists, album, cover art and progress of whatever the client is
 playing along the bottom quarter of the screen, over a blurred, darkened
-copy of the cover. The time is always shown in the top left, the date
-(e.g. `Fri 10/30`) in the top middle, the current weather in the top
-right, and the next five days' forecast, from today, across the middle;
-when nothing is playing, they're all there is, on black.
+copy of the cover. The time is always shown in the top left, the current
+weather in the top middle, the date (e.g. `Fri 10/30`) in the top right,
+and the next five days' forecast, from today, across the middle; when
+nothing is playing, they're all there is, on black.
 
 It's built for a TV on a Linux HTPC, launched from Steam's Gaming Mode
 (gamescope), but runs on any Linux desktop with SDL3.
@@ -94,7 +94,7 @@ out:
   of connecting, with its original timing. A media key logs the line it
   would send to the replay's stream.
 - `--fake-weather CONDITION,TEMP[,night]` shows that weather in the top
-  right, and a made-up forecast starting with it, instead of fetching
+  middle, and a made-up forecast starting with it, instead of fetching
   them, e.g. `partly-cloudy,57,night`: one of `clear`, `partly-cloudy`,
   `cloudy`, `rain`, `snow`, `wind`, `fog`, `haze`, `sleet`, `hail`,
   `thunder` or `thunderstorm`, the temperature in `--units`, and `night`

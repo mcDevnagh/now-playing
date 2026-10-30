@@ -87,21 +87,21 @@ fn regions_split_the_screen() {
     let (w, h) = SCREEN;
     let r = Regions::new((w as u32, h as u32));
     assert_eq!(r.background, Bounds::screen((w as u32, h as u32)));
-    // The time and weather side by side in the top quarter, the metadata
-    // in the bottom quarter, with the same margins at the sides.
+    // The time and date side by side in the top quarter, the metadata in
+    // the bottom quarter, with the same margins at the sides.
     assert_eq!((r.time.y, r.time.h), (0.0, 0.25 * h));
-    assert_eq!((r.weather.y, r.weather.h), (0.0, 0.25 * h));
+    assert_eq!((r.date.y, r.date.h), (0.0, 0.25 * h));
     assert_eq!((r.metadata.y, r.metadata.h), (0.75 * h, 0.25 * h));
     assert_eq!(r.time.x, r.metadata.x);
-    assert_eq!(r.time.x + r.time.w, r.weather.x);
-    assert_eq!(r.time.w, r.weather.w);
-    assert_eq!(r.weather.x + r.weather.w, r.metadata.x + r.metadata.w);
+    assert_eq!(r.time.x + r.time.w, r.date.x);
+    assert_eq!(r.time.w, r.date.w);
+    assert_eq!(r.date.x + r.date.w, r.metadata.x + r.metadata.w);
     assert!(r.time.x > 0.0);
-    assert_eq!(r.time.x, w - (r.weather.x + r.weather.w));
-    // The date spans the top quarter, overlapping both.
-    assert_eq!(r.date.x, r.time.x);
-    assert_eq!(r.date.x + r.date.w, r.weather.x + r.weather.w);
-    assert_eq!((r.date.y, r.date.h), (0.0, 0.25 * h));
+    assert_eq!(r.time.x, w - (r.date.x + r.date.w));
+    // The weather spans the top quarter, overlapping both.
+    assert_eq!(r.weather.x, r.time.x);
+    assert_eq!(r.weather.x + r.weather.w, r.date.x + r.date.w);
+    assert_eq!((r.weather.y, r.weather.h), (0.0, 0.25 * h));
     // The forecast fills the middle half, between them, at the same margins.
     assert_eq!((r.forecast.y, r.forecast.h), (0.25 * h, 0.5 * h));
     assert_eq!(r.forecast.x, r.metadata.x);
@@ -279,7 +279,7 @@ fn weather_bounds() -> Bounds {
 }
 
 #[test]
-fn weather_layout_is_right_aligned() {
+fn weather_layout_is_centred() {
     let fonts = Fonts::load();
     let bounds = weather_bounds();
     let weather = Weather {
@@ -289,11 +289,13 @@ fn weather_layout_is_right_aligned() {
     };
     let l = weather_component::layout(&fonts, &weather, Units::Fahrenheit, bounds);
     assert_eq!(l.text, "57°");
-    assert!((l.text_x + l.text_width - (bounds.x + bounds.w)).abs() < 0.01);
     let (icon, place) = l.icon.expect("icon");
     assert_eq!(icon, Icon::PartlyCloudyNight);
     assert_eq!(place.w, place.h);
     assert!(place.x + place.w < l.text_x, "{place:?} overlaps the text");
+    // Icon and text centred together, on the middle of the screen.
+    let middle = (place.x + l.text_x + l.text_width) / 2.0;
+    assert!((middle - SCREEN.0 / 2.0).abs() < 0.01, "{middle}");
     assert!(inside(bounds, place.x, place.y, place.w, place.h));
     // On the same line as the clock: both text boxes start at the same y.
     let clock = Face::new(&fonts.regular, 0.4 * bounds.h);
@@ -311,6 +313,8 @@ fn weather_without_a_condition_is_just_the_temperature() {
     let l = weather_component::layout(&fonts, &weather, Units::Celsius, weather_bounds());
     assert_eq!(l.icon, None);
     assert_eq!(l.text, "20°");
+    // Centred on its own.
+    assert!((l.text_x + l.text_width / 2.0 - SCREEN.0 / 2.0).abs() < 0.01);
 }
 
 fn date(day: u32) -> chrono::NaiveDate {
@@ -440,7 +444,7 @@ fn the_date_is_day_month_and_day_of_month() {
 }
 
 #[test]
-fn the_date_is_centred_on_the_clocks_line() {
+fn the_date_is_right_aligned_on_the_clocks_line() {
     let fonts = Fonts::load();
     let regions = Regions::new((SCREEN.0 as u32, SCREEN.1 as u32));
     let bounds = regions.date;
@@ -448,7 +452,8 @@ fn the_date_is_centred_on_the_clocks_line() {
     let text = date_text(date(30));
     let (x, y) = date_component::place(&face, &text, bounds);
     let width = face.width(&text);
-    assert!((x + width / 2.0 - SCREEN.0 / 2.0).abs() < 0.01);
+    assert!((x + width - (bounds.x + bounds.w)).abs() < 0.01);
+    assert_eq!(bounds.x + bounds.w, regions.metadata.x + regions.metadata.w);
     let time = regions.time;
     assert!((y - (time.y + (time.h - face.height()) / 2.0)).abs() < 0.01);
 }

@@ -1,5 +1,5 @@
 //! The current weather: its condition's icon, then the temperature,
-//! right-aligned.
+//! centred.
 
 use std::rc::Rc;
 
@@ -37,19 +37,24 @@ pub struct Layout {
     pub text_width: f32,
 }
 
-/// The temperature's right edge on the bounds' right edge, on the same
-/// line as the clock; the icon to its left, centred on the digits.
+/// The icon and the temperature to its right, centred together in the
+/// bounds, on the same line as the clock; the icon centred on the digits.
 pub fn layout(fonts: &Fonts, weather: &model::Weather, units: Units, bounds: Bounds) -> Layout {
     let face = Face::new(&fonts.regular, TOP_TEXT_SIZE * bounds.h);
     let text = temperature_text(weather.temperature, units);
     let text_width = face.width(&text);
-    let text_x = bounds.x + bounds.w - text_width;
+    let side = ICON_SIZE * bounds.h;
+    let icon_width = match weather.condition {
+        Some(_) => side + GAP * bounds.h,
+        None => 0.0,
+    };
+    let left = bounds.x + (bounds.w - (icon_width + text_width)) / 2.0;
+    let text_x = left + icon_width;
     let text_y = bounds.y + (bounds.h - face.height()) / 2.0;
     let icon = weather.condition.map(|condition| {
-        let side = ICON_SIZE * bounds.h;
         let middle = text_y + face.middle_of('0');
         let place = Bounds {
-            x: text_x - GAP * bounds.h - side,
+            x: left,
             y: middle - side / 2.0,
             w: side,
             h: side,

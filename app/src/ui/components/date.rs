@@ -1,4 +1,4 @@
-//! Today's date, e.g. `Fri 10/30`, centred.
+//! Today's date, e.g. `Fri 10/30`, right-aligned.
 
 use std::rc::Rc;
 
@@ -15,11 +15,12 @@ pub fn date_text(date: NaiveDate) -> String {
     date.format("%a %-m/%-d").to_string()
 }
 
-/// The top left of `text` in `face`, centred in `bounds`: on the same line
-/// as the clock, which is vertically centred in the same band.
+/// The top left of `text` in `face`, its right edge on the bounds' right
+/// edge: on the same line as the clock, which is vertically centred in the
+/// same band.
 pub fn place(face: &Face, text: &str, bounds: Bounds) -> (f32, f32) {
     (
-        bounds.x + (bounds.w - face.width(text)) / 2.0,
+        bounds.x + bounds.w - face.width(text),
         bounds.y + (bounds.h - face.height()) / 2.0,
     )
 }
