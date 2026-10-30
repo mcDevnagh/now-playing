@@ -38,6 +38,8 @@ enum Message {
     State(State),
     /// A cover URL, and its decoded images or why there are none.
     Cover(String, Result<Cover, String>),
+    /// The current weather, or None if there's none to show.
+    Weather(Option<weather::Weather>),
 }
 
 /// Wakes the window's event loop from another thread.
@@ -79,16 +81,38 @@ impl Updates {
     }
 }
 
+/// Hands the weather from another thread to the window.
+pub struct WeatherUpdates {
+    tx: Sender<Message>,
+    waker: Waker,
+    last: Option<Option<weather::Weather>>,
+}
+
+impl WeatherUpdates {
+    /// Sends `weather` and wakes the window, unless it is the same as the
+    /// last.
+    pub fn send(&mut self, weather: Option<weather::Weather>) {
+        if self.last.as_ref() == Some(&weather) {
+            return;
+        }
+        self.last = Some(weather.clone());
+        if self.tx.send(Message::Weather(weather)).is_ok() {
+            self.waker.wake();
+        }
+    }
+}
+
 /// Opens the window and runs until the user quits. `source` runs on its own
 /// thread and feeds states through the `Updates` it is given. The media keys
 /// go to `controller`. Covers whose host doesn't resolve are fetched from
-/// `art_host` instead. Temperatures are shown in `units`; `weather` is
-/// shown from the start.
+/// `art_host` instead. `weather`, like `source`, runs on its own thread
+/// and feeds the weather through the `WeatherUpdates` it is given; its
+/// temperatures are shown in `units`.
 pub fn run(
     art_host: &str,
     controller: Controller,
     units: Units,
-    weather: Option<weather::Weather>,
+    weather: impl FnOnce(WeatherUpdates) + Send + 'static,
     source: impl FnOnce(Updates) + Send + 'static,
 ) -> Result<(), String> {
     sdl3::hint::set("SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS", "0");
@@ -125,6 +149,12 @@ pub fn run(
         last: None,
     };
     thread::spawn(move || source(updates));
+    let weather_updates = WeatherUpdates {
+        tx: tx.clone(),
+        waker: waker(),
+        last: None,
+    };
+    thread::spawn(move || weather(weather_updates));
     let art = spawn_art(Fetcher::new(art_host), tx, waker());
 
     let creator = canvas.texture_creator();
@@ -136,7 +166,7 @@ pub fn run(
         time: Time::new(&creator, fonts.clone()),
         weather: Weather::new(&creator, fonts.clone(), units),
         metadata: Metadata::new(&creator, fonts),
-        current_weather: weather,
+        current_weather: None,
         state: State::Idle,
         since: Instant::now(),
         art,
@@ -345,6 +375,7 @@ impl<'t> Screen<'t> {
         match message {
             Message::State(state) => self.set_state(state),
             Message::Cover(url, cover) => self.set_cover(url, cover)?,
+            Message::Weather(weather) => self.current_weather = weather,
         }
         Ok(())
     }
@@ -434,6 +465,8 @@ impl<'t> Screen<'t> {
             Message::Cover(url, _) => self
                 .track()
                 .is_some_and(|(track, _)| track.art_url.as_ref() == Some(url)),
+            // The weather changes in place, like the clock.
+            Message::Weather(_) => false,
         }
     }
 

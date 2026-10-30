@@ -3,8 +3,9 @@
 A full-screen "Now Playing" screen for a [Snapcast] client. It shows the
 title, artists, album, cover art and progress of whatever the client is
 playing along the bottom quarter of the screen, over a blurred, darkened
-copy of the cover. The time is always shown in the top left; when nothing
-is playing, it's all there is, on black.
+copy of the cover. The time is always shown in the top left, and the
+current weather in the top right; when nothing is playing, they're all
+there is, on black.
 
 It's built for a TV on a Linux HTPC, launched from Steam's Gaming Mode
 (gamescope), but runs on any Linux desktop with SDL3.
@@ -39,11 +40,27 @@ the front when music starts, Kodi to the front when Kodi plays, and
   progress bar while playing, and otherwise once a minute for the clock. It goes quiet when another window, such as
   a game, is in front. Changes fade over 400 ms.
 - If the connection drops, it reconnects with backoff, up to 30 s apart.
+- The weather comes from [Open-Meteo], every 15 minutes, for
+  `--latitude` and `--longitude`. Without them, it asks [IP.SB] once at
+  start where the machine's public IP address is, and logs the city and
+  coordinates it got. That's usually a nearby city, and wrong behind a
+  VPN; pass the options to correct it. If fetching fails it retries,
+  from 30 s up to 15 minutes apart, and after an hour without weather it
+  stops showing the old one. The icons are [Breezy Weather]'s.
+- Privacy: Open-Meteo is sent the coordinates, and, without them, IP.SB
+  sees the IP address; nothing else leaves the machine for the weather.
+  See [Open-Meteo's terms] and [IP.SB's privacy policy].
+
+[Open-Meteo]: https://open-meteo.com
+[IP.SB]: https://ip.sb
+[Open-Meteo's terms]: https://open-meteo.com/en/terms
+[IP.SB's privacy policy]: https://ip.sb/privacy-policy/
 
 ## Usage
 
 ```
 now-playing [--server HOST:PORT] [--client ID] [--units UNITS]
+            [--latitude DEGREES --longitude DEGREES]
 ```
 
 - `--server`: snapserver's JSON-RPC address. The built-in default is a
@@ -51,8 +68,10 @@ now-playing [--server HOST:PORT] [--client ID] [--units UNITS]
 - `--client`: the Snapcast client to follow, by id or host name. Defaults
   to this machine's hostname.
 - `--units`: `fahrenheit` (the default) or `celsius`, for the weather's
-  temperature. The weather isn't fetched yet, so for now it only shows
-  with `--fake-weather` in debug builds.
+  temperature.
+- `--latitude`, `--longitude`: where to show the weather for, in degrees
+  north and east (south and west negative), given together. Defaults to
+  where the machine's public IP address is.
 
 The media keys play or pause, skip to the next track and go back to the
 previous one, while the window is in front. A key that isn't sent,
@@ -72,7 +91,7 @@ out:
   of connecting, with its original timing. A media key logs the line it
   would send to the replay's stream.
 - `--fake-weather CONDITION,TEMP[,night]` shows that weather in the top
-  right, e.g. `partly-cloudy,57,night`: one of `clear`, `partly-cloudy`,
+  right instead of fetching it, e.g. `partly-cloudy,57,night`: one of `clear`, `partly-cloudy`,
   `cloudy`, `rain`, `snow`, `wind`, `fog`, `haze`, `sleet`, `hail`,
   `thunder` or `thunderstorm`, the temperature in `--units`, and `night`
   for the night icons (only clear and partly cloudy have them).
@@ -284,7 +303,7 @@ now-playing-placeholder [--image PATH] [--title TITLE]
 | `app/` | The `now-playing` crate: the full-screen app |
 | `app/src/ui/` | The window, and the text and textures it draws with |
 | `app/src/ui/components/` | The parts of the screen: background, time, weather and metadata |
-| `app/src/weather/` | The current weather, as the screen shows it |
+| `app/src/weather/` | The current weather, and fetching it from Open-Meteo |
 | `app/src/art/` | Fetching and decoding covers |
 | `app/src/debug/` | `--print`, `--fake` and `--fake-weather`, debug builds only |
 | `app/assets/fonts/` | The bundled Noto Sans fonts |

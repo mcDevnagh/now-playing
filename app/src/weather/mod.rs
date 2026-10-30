@@ -1,6 +1,19 @@
-//! The current weather, as the screen shows it.
+//! The current weather: what the screen shows, and fetching it.
+
+mod follow;
+pub mod locate;
+pub mod open_meteo;
+
+pub use follow::{EVERY, STALE, Schedule, Source, follow};
 
 use clap::ValueEnum;
+
+/// Where to show the weather for.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Location {
+    pub latitude: f64,
+    pub longitude: f64,
+}
 
 /// What the weather is doing: Breezy Weather's 12 conditions, which every
 /// source it supports is reduced to.
@@ -54,3 +67,6 @@ impl Units {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

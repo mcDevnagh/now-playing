@@ -6,7 +6,7 @@ use now_playing::debug;
 use now_playing::snapcast::{self, Inbox, Stream};
 use now_playing::state::{State, now_playing};
 use now_playing::ui;
-use now_playing::weather::Units;
+use now_playing::weather::{self, Location, Units};
 use now_playing_core::hostname;
 
 const DEFAULT_SERVER: &str = "192.168.1.160:1705";
@@ -25,6 +25,13 @@ struct Args {
     /// The units temperatures are shown in.
     #[arg(long, value_enum, default_value_t)]
     units: Units,
+    /// Where to show the weather for, in degrees north [default: found
+    /// from this machine's public IP address].
+    #[arg(long, requires = "longitude", allow_negative_numbers = true, value_parser = latitude)]
+    latitude: Option<f64>,
+    /// Where to show the weather for, in degrees east.
+    #[arg(long, requires = "latitude", allow_negative_numbers = true, value_parser = longitude)]
+    longitude: Option<f64>,
     /// Print state changes instead of opening the window.
     #[cfg(debug_assertions)]
     #[arg(long)]
@@ -62,19 +69,37 @@ fn main() -> ExitCode {
         Some((host, _)) => host.to_owned(),
         None => args.server.clone(),
     };
+    let location = args
+        .latitude
+        .zip(args.longitude)
+        .map(|(latitude, longitude)| Location {
+            latitude,
+            longitude,
+        });
     #[cfg(debug_assertions)]
-    let weather = args
+    let fake_weather = args
         .fake_weather
         .as_ref()
         .map(|fake| fake.weather(args.units));
-    #[cfg(not(debug_assertions))]
-    let weather = None;
+    let follow_weather = move |mut updates: ui::WeatherUpdates| {
+        #[cfg(debug_assertions)]
+        if let Some(fake) = fake_weather {
+            return updates.send(Some(fake));
+        }
+        weather::follow(location, |weather| updates.send(weather));
+    };
     let units = args.units;
-    let result = ui::run(&art_host, controller, units, weather, move |mut updates| {
-        follow(&args, &client, inbox, |stream| {
-            updates.send(stream.map_or(State::Idle, now_playing));
-        });
-    });
+    let result = ui::run(
+        &art_host,
+        controller,
+        units,
+        follow_weather,
+        move |mut updates| {
+            follow(&args, &client, inbox, |stream| {
+                updates.send(stream.map_or(State::Idle, now_playing));
+            });
+        },
+    );
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -101,4 +126,22 @@ fn follow(args: &Args, client: &str, inbox: Inbox, on_stream: impl FnMut(Option<
 #[cfg(debug_assertions)]
 fn read_log(path: &str) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|e| e.to_string())
+}
+
+/// A latitude, for `--latitude`.
+fn latitude(arg: &str) -> Result<f64, String> {
+    degrees(arg, 90.0)
+}
+
+/// A longitude, for `--longitude`.
+fn longitude(arg: &str) -> Result<f64, String> {
+    degrees(arg, 180.0)
+}
+
+fn degrees(arg: &str, max: f64) -> Result<f64, String> {
+    let degrees: f64 = arg.parse().map_err(|e| format!("{e}"))?;
+    if !(-max..=max).contains(&degrees) {
+        return Err(format!("not between -{max} and {max}"));
+    }
+    Ok(degrees)
 }
