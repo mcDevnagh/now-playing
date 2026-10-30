@@ -17,8 +17,8 @@ use crate::weather::{Day, Units};
 
 /// The two lines' size, as a fraction of the clock's.
 const SMALL: f32 = 0.45;
-/// Between the two lines, as a fraction of the bounds' height.
-const LINE_GAP: f32 = 0.04;
+/// The space between the two lines' digits, as a fraction of their height.
+const LINE_SPACE: f32 = 0.35;
 
 /// Today's forecast in `days`, if there is one.
 pub fn today(days: &[Day], today: NaiveDate) -> Option<&Day> {
@@ -78,8 +78,12 @@ pub fn layout(fonts: &Fonts, day: &Day, units: Units, bounds: Bounds) -> Layout 
         Some(_) => right - side - GAP * bounds.h,
         None => right,
     };
-    let gap = LINE_GAP * bounds.h;
-    let top = middle - (2.0 * face.height() + gap) / 2.0;
+    // Spaced and centred by the digits' ink: the lines' boxes leave room
+    // for accents above and descenders below, which would push them apart.
+    let (ink_top, ink_bottom) = face.ink_of('0');
+    let digits = ink_bottom - ink_top;
+    let space = LINE_SPACE * digits;
+    let top = middle - (2.0 * digits + space) / 2.0 - ink_top;
     let line = |text: String, y: f32| {
         let width = face.width(&text);
         Line {
@@ -102,7 +106,7 @@ pub fn layout(fonts: &Fonts, day: &Day, units: Units, bounds: Bounds) -> Layout 
     Layout {
         icon,
         date: line(date, top),
-        high_low: line(high_low, top + face.height() + gap),
+        high_low: line(high_low, top + digits + space),
     }
 }
 

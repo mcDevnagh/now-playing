@@ -52,11 +52,23 @@ impl<'a> Face<'a> {
         self.line_metrics().new_line_size
     }
 
+    /// How far below the top of a rasterised line the top and bottom of
+    /// `c`'s ink are: to space or centre by, say, a line of digits rather
+    /// than the room left for accents and descenders.
+    pub fn ink_of(&self, c: char) -> (f32, f32) {
+        let glyph = self.font.metrics(c, self.px);
+        let ascent = self.line_metrics().ascent;
+        (
+            ascent - (glyph.ymin as f32 + glyph.height as f32),
+            ascent - glyph.ymin as f32,
+        )
+    }
+
     /// How far below the top of a rasterised line the middle of `c`'s ink
     /// is: to centre something on, say, a line of digits.
     pub fn middle_of(&self, c: char) -> f32 {
-        let glyph = self.font.metrics(c, self.px);
-        self.line_metrics().ascent - (glyph.ymin as f32 + glyph.height as f32 / 2.0)
+        let (top, bottom) = self.ink_of(c);
+        (top + bottom) / 2.0
     }
 
     pub fn width(&self, text: &str) -> f32 {

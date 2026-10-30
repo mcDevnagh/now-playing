@@ -384,13 +384,27 @@ fn forecast_layout() {
     let right = l.date.x + l.date.width;
     assert!((right - (l.high_low.x + l.high_low.width)).abs() < 0.01);
     assert!(right < place.x);
-    // One above the other, together about one line of the clock's text,
-    // and centred on the icon.
-    let clock = Face::new(&fonts.regular, 0.4 * bounds.h).height();
-    let block = l.high_low.y + l.high_low.height - l.date.y;
-    assert!(l.high_low.y > l.date.y + l.date.height);
-    assert!((block / clock - 1.0).abs() < 0.1, "{block} for {clock}");
-    let middle = (l.date.y + l.high_low.y + l.high_low.height) / 2.0;
+    // One above the other, close: the space between their digits a third
+    // or so of the digits' height. Together, digits to digits, about one
+    // line of the clock's digits, and centred on the icon.
+    let clock_face = Face::new(&fonts.regular, 0.4 * bounds.h);
+    let clock = clock_face.height();
+    let (clock_top, clock_bottom) = clock_face.ink_of('0');
+    let small = Face::new(&fonts.regular, l.date.height / clock * 0.4 * bounds.h);
+    let (top, bottom) = small.ink_of('0');
+    let digits = bottom - top;
+    let space = (l.high_low.y + top) - (l.date.y + bottom);
+    assert!(
+        space > 0.0 && space < 0.5 * digits,
+        "{space} between {digits}"
+    );
+    let block = (l.high_low.y + bottom) - (l.date.y + top);
+    let clock_digits = clock_bottom - clock_top;
+    assert!(
+        (block / clock_digits - 1.0).abs() < 0.1,
+        "{block} for {clock_digits}"
+    );
+    let middle = (l.date.y + top + l.high_low.y + bottom) / 2.0;
     assert!((middle - (place.y + place.h / 2.0)).abs() < 0.5);
     for line in [&l.date, &l.high_low] {
         assert!(line.height < clock / 2.0);
