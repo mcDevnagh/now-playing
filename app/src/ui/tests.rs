@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use chrono::{Local, TimeZone};
 
+use super::components::date::{self as date_component, date_text};
 use super::components::forecast::{self, day_text, high_low_text};
 use super::components::metadata::{Style, cover_side, layout, same_layout};
 use super::components::time::{clock_text, until_next_minute};
@@ -97,6 +98,10 @@ fn regions_split_the_screen() {
     assert_eq!(r.weather.x + r.weather.w, r.metadata.x + r.metadata.w);
     assert!(r.time.x > 0.0);
     assert_eq!(r.time.x, w - (r.weather.x + r.weather.w));
+    // The date spans the top quarter, overlapping both.
+    assert_eq!(r.date.x, r.time.x);
+    assert_eq!(r.date.x + r.date.w, r.weather.x + r.weather.w);
+    assert_eq!((r.date.y, r.date.h), (0.0, 0.25 * h));
     // The forecast fills the middle half, between them, at the same margins.
     assert_eq!((r.forecast.y, r.forecast.h), (0.25 * h, 0.5 * h));
     assert_eq!(r.forecast.x, r.metadata.x);
@@ -424,4 +429,26 @@ fn forecast_layout() {
     let two = forecast::layout(&fonts, &week[..2], date(25), Units::Fahrenheit, bounds);
     assert_eq!(two.len(), 2);
     assert!(forecast::layout(&fonts, &[], date(25), Units::Fahrenheit, bounds).is_empty());
+}
+
+#[test]
+fn the_date_is_day_month_and_day_of_month() {
+    assert_eq!(date_text(date(30)), "Fri 10/30");
+    let ymd = |y, m, d| chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap();
+    assert_eq!(date_text(ymd(2026, 11, 5)), "Thu 11/5");
+    assert_eq!(date_text(ymd(2027, 1, 1)), "Fri 1/1");
+}
+
+#[test]
+fn the_date_is_centred_on_the_clocks_line() {
+    let fonts = Fonts::load();
+    let regions = Regions::new((SCREEN.0 as u32, SCREEN.1 as u32));
+    let bounds = regions.date;
+    let face = Face::new(&fonts.regular, 0.4 * bounds.h);
+    let text = date_text(date(30));
+    let (x, y) = date_component::place(&face, &text, bounds);
+    let width = face.width(&text);
+    assert!((x + width / 2.0 - SCREEN.0 / 2.0).abs() < 0.01);
+    let time = regions.time;
+    assert!((y - (time.y + (time.h - face.height()) / 2.0)).abs() < 0.01);
 }

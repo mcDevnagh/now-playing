@@ -3,12 +3,14 @@
 //! box.
 
 pub mod background;
+pub mod date;
 pub mod forecast;
 pub mod metadata;
 pub mod time;
 pub mod weather;
 
 pub use background::Background;
+pub use date::Date;
 pub use forecast::Forecast;
 pub use metadata::{Metadata, cover_side};
 pub use time::{Time, until_next_minute};
@@ -110,6 +112,9 @@ pub struct Regions {
     pub background: Bounds,
     /// The left half of the top quarter.
     pub time: Bounds,
+    /// All of the top quarter, centred in it. It overlaps the time's and
+    /// the weather's bounds, but not what they draw.
+    pub date: Bounds,
     /// The right half of the top quarter.
     pub weather: Bounds,
     /// The middle half, between the top and bottom quarters.
@@ -127,6 +132,7 @@ impl Regions {
         Regions {
             background: screen,
             time: Bounds { w: half, ..top },
+            date: top,
             weather: Bounds {
                 x: top.x + half,
                 w: half,
