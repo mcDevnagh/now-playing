@@ -208,30 +208,41 @@ fn only_text_changes_need_a_new_layout() {
 fn media_keys_send_commands() {
     use sdl3::keyboard::Keycode;
 
-    use super::keys::command_for;
+    use super::keys::{KeyAction, action_for};
     use crate::snapcast::Command;
 
-    assert_eq!(
-        command_for(Some(Keycode::MediaPlayPause)),
-        Some(Command::PlayPause)
-    );
-    assert_eq!(
-        command_for(Some(Keycode::MediaNextTrack)),
-        Some(Command::Next)
-    );
-    assert_eq!(
-        command_for(Some(Keycode::MediaPreviousTrack)),
-        Some(Command::Previous)
-    );
-    for other in [
-        Keycode::Escape,
-        Keycode::Space,
-        Keycode::AcBack,
-        Keycode::MediaPlay,
-    ] {
-        assert_eq!(command_for(Some(other)), None, "{other}");
+    for screensaver in [false, true] {
+        assert_eq!(
+            action_for(Some(Keycode::MediaPlayPause), screensaver),
+            Some(KeyAction::Send(Command::PlayPause))
+        );
+        assert_eq!(
+            action_for(Some(Keycode::MediaNextTrack), screensaver),
+            Some(KeyAction::Send(Command::Next))
+        );
+        assert_eq!(
+            action_for(Some(Keycode::MediaPreviousTrack), screensaver),
+            Some(KeyAction::Send(Command::Previous))
+        );
     }
-    assert_eq!(command_for(None), None);
+}
+
+#[test]
+fn other_keys_quit_only_a_screensaver() {
+    use sdl3::keyboard::Keycode;
+
+    use super::keys::{KeyAction, action_for};
+
+    for other in [
+        Some(Keycode::Escape),
+        Some(Keycode::Space),
+        Some(Keycode::AcBack),
+        Some(Keycode::MediaPlay),
+        None,
+    ] {
+        assert_eq!(action_for(other, false), None, "{other:?}");
+        assert_eq!(action_for(other, true), Some(KeyAction::Quit), "{other:?}");
+    }
 }
 
 #[test]

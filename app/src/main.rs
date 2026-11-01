@@ -32,6 +32,9 @@ struct Args {
     /// Where to show the weather for, in degrees east.
     #[arg(long, requires = "latitude", allow_negative_numbers = true, value_parser = longitude)]
     longitude: Option<f64>,
+    /// Run as a screensaver: any key but the media keys quits.
+    #[arg(long)]
+    screensaver: bool,
     /// Print state changes instead of opening the window.
     #[cfg(debug_assertions)]
     #[arg(long)]
@@ -89,10 +92,12 @@ fn main() -> ExitCode {
         weather::follow(location, |weather| updates.send(weather));
     };
     let units = args.units;
+    let screensaver = args.screensaver;
     let result = ui::run(
         &art_host,
         controller,
         units,
+        screensaver,
         follow_weather,
         move |mut updates| {
             follow(&args, &client, inbox, |stream| {

@@ -63,7 +63,7 @@ the front when music starts, Kodi to the front when Kodi plays, and
 
 ```
 now-playing [--server HOST:PORT] [--client ID] [--units UNITS]
-            [--latitude DEGREES --longitude DEGREES]
+            [--latitude DEGREES --longitude DEGREES] [--screensaver]
 ```
 
 - `--server`: snapserver's JSON-RPC address. The built-in default is a
@@ -75,14 +75,18 @@ now-playing [--server HOST:PORT] [--client ID] [--units UNITS]
 - `--latitude`, `--longitude`: where to show the weather for, in degrees
   north and east (south and west negative), given together. Defaults to
   where the machine's public IP address is.
+- `--screensaver`: quit on any key but the media keys, for running as
+  Kodi's screensaver.
 
 The media keys play or pause, skip to the next track and go back to the
 previous one, while the window is in front. A key that isn't sent,
 because there's no stream or the stream doesn't allow it, logs one line
 saying why. Holding a key sends it once.
 
-No key quits it. In Gaming Mode, Steam's "Exit game" quits it; the Steam
-button leaves it running in the background.
+Without `--screensaver`, no key quits it. In Gaming Mode, Steam's "Exit
+game" quits it; the Steam button leaves it running in the background. With
+it, any other key quits, so a key on the remote ends the screensaver, while
+the media keys still control the music without waking the TV.
 
 ### Debug builds
 

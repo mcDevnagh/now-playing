@@ -21,7 +21,7 @@ use sdl3::pixels::Color;
 use sdl3::render::{BlendMode, Texture, WindowCanvas};
 
 use super::components::{self, Background, Forecast, Metadata, Regions, Time, Weather, forecast};
-use super::keys::command_for;
+use super::keys::{KeyAction, action_for};
 use super::text::Fonts;
 use super::texture::{self, Creator};
 use crate::art::{self, Cover, Fetcher};
@@ -102,9 +102,10 @@ impl WeatherUpdates {
     }
 }
 
-/// Opens the window and runs until the user quits. `source` runs on its own
-/// thread and feeds states through the `Updates` it is given. The media keys
-/// go to `controller`. Covers whose host doesn't resolve are fetched from
+/// Opens the window and runs until it's closed, or, as a `screensaver`, until
+/// a key other than a media key is pressed. `source` runs on its own thread
+/// and feeds states through the `Updates` it is given. The media keys go to
+/// `controller`. Covers whose host doesn't resolve are fetched from
 /// `art_host` instead. `weather`, like `source`, runs on its own thread
 /// and feeds the weather through the `WeatherUpdates` it is given; its
 /// temperatures are shown in `units`.
@@ -112,6 +113,7 @@ pub fn run(
     art_host: &str,
     controller: Controller,
     units: Units,
+    screensaver: bool,
     weather: impl FnOnce(WeatherUpdates) + Send + 'static,
     source: impl FnOnce(Updates) + Send + 'static,
 ) -> Result<(), String> {
@@ -179,7 +181,15 @@ pub fn run(
         visible: false,
         fade: None,
     };
-    event_loop(&sdl, &mut canvas, &mut screen, &rx, kind, &controller)
+    event_loop(
+        &sdl,
+        &mut canvas,
+        &mut screen,
+        &rx,
+        kind,
+        &controller,
+        screensaver,
+    )
 }
 
 /// Starts the art thread. It blocks until it is sent a URL, then fetches
@@ -209,6 +219,7 @@ fn event_loop(
     rx: &Receiver<Message>,
     kind: u32,
     controller: &Controller,
+    screensaver: bool,
 ) -> Result<(), String> {
     let mut pump = sdl.event_pump().map_err(|e| e.to_string())?;
     let mut focused = true;
@@ -249,7 +260,8 @@ fn event_loop(
         // handles both.
         let Some(event) = event else { continue };
         match event {
-            // No key quits: in Gaming Mode, Steam's "Exit game" closes it.
+            // Only a screensaver quits on a key: otherwise, in Gaming Mode,
+            // Steam's "Exit game" closes it.
             Event::Quit { .. } => return Ok(()),
             Event::User { type_, .. } if type_ == kind => {
                 for message in rx.try_iter() {
@@ -280,13 +292,16 @@ fn event_loop(
                 dirty = true;
             }
             // The media keys, once per press: holding Next skips one track.
-            // Keys only arrive while the window has focus, so a game or Kodi
-            // in front keeps them.
+            // As a screensaver, any other key quits. Keys only arrive while
+            // the window has focus, so a game or Kodi in front keeps them.
             Event::KeyDown {
                 keycode,
                 repeat: false,
                 ..
-            } if let Some(command) = command_for(keycode) => controller.send(command),
+            } if let Some(action) = action_for(keycode, screensaver) => match action {
+                KeyAction::Send(command) => controller.send(command),
+                KeyAction::Quit => return Ok(()),
+            },
             // Debug builds log the keys nothing handles, to find what a
             // remote's buttons send before mapping them.
             #[cfg(debug_assertions)]
