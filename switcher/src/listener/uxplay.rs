@@ -1,5 +1,6 @@
 //! Follows UxPlay's video window, reporting a start when it opens: UxPlay
 //! opens it when a device starts mirroring, and closes it when it stops.
+//! Whether it's open is reported too, to keep Kodi awake meanwhile.
 
 use std::sync::mpsc::Sender;
 use std::thread;
@@ -12,7 +13,8 @@ use crate::quiet::Player;
 use crate::windows;
 
 /// Follows windows of class `window_class` on `display`, the display
-/// UxPlay's windows open on, reporting whenever one opens.
+/// UxPlay's windows open on, reporting whenever one opens, and whether
+/// one's open.
 pub struct Uxplay {
     pub window_class: String,
     pub display: String,
@@ -36,16 +38,23 @@ impl Listener for Uxplay {
                     backoff.reset();
                     quiet = false;
                 }
+                // The dispatch loop outlives the listeners.
+                if edges.last != Some(open) {
+                    let _ = requests.send(Request::Mirroring(open));
+                }
                 match edges.update(open) {
                     Some(true) => {
                         eprintln!("uxplay: mirroring started");
-                        // The dispatch loop outlives the listeners.
                         let _ = requests.send(Request::Started(Player::Uxplay));
                     }
                     Some(false) => eprintln!("uxplay: mirroring stopped"),
                     None => {}
                 }
             });
+            // Unknown until it reconnects; the window has likely gone.
+            if edges.last == Some(true) {
+                let _ = requests.send(Request::Mirroring(false));
+            }
             if !quiet {
                 eprintln!("uxplay: {display}: {reason}; retrying quietly");
                 quiet = true;

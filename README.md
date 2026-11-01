@@ -173,6 +173,12 @@ something already paused, or muting something already muted, does nothing.
 It acts when playback starts or resumes, not on a track change or a
 reconnect.
 
+While a device mirrors to UxPlay, the remote isn't touching Kodi, so Kodi
+would go idle and start its screensaver over the mirror. So, with a
+`[kodi]` table, the switcher sends Kodi a no-op action as mirroring starts
+and every 30 s until it stops, which also ends a screensaver that's already
+up. Set `keep_kodi_awake = false` under `[uxplay]` to turn it off.
+
 UxPlay reports nothing about a cast, so the switcher follows its video
 window instead, on `$DISPLAY`: UxPlay opens one when mirroring starts and
 closes it when mirroring stops. Audio-only AirPlay opens no window, so it
@@ -211,7 +217,8 @@ now-playing-switcher [--config PATH] [--dry-run]
 - `--config`: the config file. Defaults to
   `$XDG_CONFIG_HOME/now-playing/switcher.toml`, else
   `~/.config/now-playing/switcher.toml`.
-- `--dry-run`: log what it would do, without pausing or muting.
+- `--dry-run`: log what it would do, without pausing, muting or waking
+  Kodi.
 
 ## The placeholder window
 

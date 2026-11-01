@@ -1,9 +1,9 @@
 //! Follows Kodi's JSON-RPC notifications, reporting when playback starts,
-//! and pauses Kodi when asked.
+//! and pauses Kodi, or wakes it, when asked.
 //!
 //! One thread owns the connection and the socket's writer. Everything it
 //! reacts to arrives on one channel: messages from a reader thread, and
-//! pauses from whoever holds a [`Controller`].
+//! commands from whoever holds a [`Controller`].
 
 use std::io::{self, BufReader, Read, Write};
 use std::net::{Shutdown, TcpStream};
@@ -18,7 +18,7 @@ use crate::action::Request;
 use crate::quiet::Player;
 
 /// Follows Kodi's JSON-RPC TCP port at `address`, reporting each play or
-/// resume, and pauses Kodi when `inbox` is asked to.
+/// resume, and carries out the commands that arrive in `inbox`.
 pub struct Kodi {
     pub address: String,
     pub inbox: Inbox,
@@ -67,10 +67,12 @@ enum Input {
     Closed { connection: u64, error: io::Error },
     /// From the dispatch loop, through a `Controller`.
     Pause,
+    /// Likewise.
+    Noop,
 }
 
-/// What other threads hold to ask the connection to do things: for now only
-/// pause. It can't fake a message.
+/// What other threads hold to ask the connection to do things. It can't
+/// fake a message.
 #[derive(Clone)]
 pub struct Controller(Sender<Input>);
 
@@ -79,6 +81,13 @@ impl Controller {
     /// nothing once the connection thread has gone.
     pub fn pause(&self) {
         let _ = self.0.send(Input::Pause);
+    }
+
+    /// Asks the connection to send Kodi a no-op action, which counts as the
+    /// user doing something: it ends Kodi's screensaver, or holds it off.
+    /// Never blocks; does nothing once the connection thread has gone.
+    pub fn noop(&self) {
+        let _ = self.0.send(Input::Noop);
     }
 }
 
@@ -91,21 +100,33 @@ pub struct Inbox {
 }
 
 impl Inbox {
-    /// Takes the pauses waiting, returning how many there were.
+    /// Takes the commands waiting, by name.
     #[cfg(test)]
-    pub fn take_pauses(&self) -> usize {
+    pub fn take(&self) -> Vec<&'static str> {
         let inputs = self.rx.try_iter();
-        inputs.filter(|input| matches!(input, Input::Pause)).count()
+        let names = inputs.map(|input| match input {
+            Input::Message { .. } => "message",
+            Input::Closed { .. } => "closed",
+            Input::Pause => "pause",
+            Input::Noop => "noop",
+        });
+        names.collect()
     }
 
-    /// Drops everything waiting: pauses asked for while Kodi was closed,
+    /// Takes the commands waiting, returning how many were pauses.
+    #[cfg(test)]
+    pub fn take_pauses(&self) -> usize {
+        self.take().iter().filter(|&&name| name == "pause").count()
+    }
+
+    /// Drops everything waiting: commands asked for while Kodi was closed,
     /// and anything left from an old connection.
     fn discard_queued(&self) {
         while self.rx.try_recv().is_ok() {}
     }
 }
 
-/// A channel for pauses into a connection.
+/// A channel for commands into a connection.
 pub fn channel() -> (Controller, Inbox) {
     let (tx, rx) = mpsc::channel();
     (Controller(tx.clone()), Inbox { rx, tx })
@@ -113,8 +134,9 @@ pub fn channel() -> (Controller, Inbox) {
 
 /// One connection: runs until it fails or Kodi closes it.
 ///
-/// Pauses waiting in `inbox` are dropped first: Kodi is often not running,
-/// and a pause from while it was closed mustn't hit it as it comes up.
+/// Commands waiting in `inbox` are dropped first: Kodi is often not
+/// running, and a pause from while it was closed mustn't hit it as it comes
+/// up.
 fn follow(
     stream: TcpStream,
     connection: u64,
@@ -223,6 +245,10 @@ impl<W: Write> Follow<W> {
                 writeln!(self.out, "{request}")?;
                 self.asked = Some(self.id);
             }
+            Input::Noop => {
+                self.id += 1;
+                writeln!(self.out, "{}", noop_request(self.id))?;
+            }
         }
         Ok(())
     }
@@ -281,6 +307,18 @@ fn pause_request(id: u64, player: u64) -> String {
         "jsonrpc": "2.0",
         "method": "Player.PlayPause",
         "params": {"playerid": player, "play": false},
+    })
+    .to_string()
+}
+
+/// The request that sends Kodi a no-op action: Kodi counts any action as
+/// the user doing something, and this one does nothing else.
+fn noop_request(id: u64) -> String {
+    json!({
+        "id": id,
+        "jsonrpc": "2.0",
+        "method": "Input.ExecuteAction",
+        "params": {"action": "noop"},
     })
     .to_string()
 }

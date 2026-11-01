@@ -32,6 +32,11 @@ server = "snapserver:1705"
 [uxplay]
 # A cast pauses Kodi and mutes this machine's Snapcast client.
 quiet_others = true
+# While a device mirrors, the remote isn't touching Kodi, so Kodi would go
+# idle and start its screensaver over the mirror. This sends Kodi a no-op
+# every 30 s meanwhile, which holds it off. Needs a [kodi] table. This is
+# the default.
+keep_kodi_awake = true
 # The WM_CLASS class of UxPlay's video window, which it opens while a device
 # mirrors and closes when it stops. This is the default.
 # window_class = "GStreamer"

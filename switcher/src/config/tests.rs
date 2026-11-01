@@ -12,6 +12,7 @@ const FULL: &str = r#"
     [uxplay]
     quiet_others = true
     window_class = "Mirror"
+    keep_kodi_awake = false
 "#;
 
 #[test]
@@ -32,6 +33,7 @@ fn full() {
             uxplay: Some(Uxplay {
                 quiet_others: true,
                 window_class: "Mirror".to_owned(),
+                keep_kodi_awake: false,
             }),
         }
     );
@@ -42,6 +44,7 @@ fn minimal_uxplay_takes_the_default_window_class() {
     let config = Config::parse("[uxplay]").unwrap();
     let uxplay = config.uxplay.unwrap();
     assert_eq!(uxplay.window_class, DEFAULT_UXPLAY_WINDOW_CLASS);
+    assert!(uxplay.keep_kodi_awake);
     assert_eq!((config.kodi, config.snapcast), (None, None));
 }
 
@@ -167,4 +170,5 @@ fn example_parses() {
     let uxplay = config.uxplay.unwrap();
     assert!(uxplay.quiet_others);
     assert_eq!(uxplay.window_class, "GStreamer");
+    assert!(uxplay.keep_kodi_awake);
 }

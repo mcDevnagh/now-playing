@@ -39,7 +39,7 @@ fn main() -> ExitCode {
         .ok()
         .filter(|display| !display.is_empty());
     let loaded = Config::load(&path).and_then(|config| listener::from_config(&config, display));
-    let (listeners, others) = match loaded {
+    let (listeners, dispatch) = match loaded {
         Ok(loaded) => loaded,
         Err(e) => {
             eprintln!("switcher: {e}");
@@ -52,8 +52,8 @@ fn main() -> ExitCode {
         let tx = tx.clone();
         thread::spawn(move || listener.run(tx));
     }
-    for request in requests {
-        action::handle(request, &others, args.dry_run);
-    }
-    unreachable!("the channel's sender is kept alive by `tx`")
+    // Keeps the channel open with no listeners, as with a config that
+    // follows nothing.
+    let _tx = tx;
+    dispatch.run(requests, args.dry_run)
 }

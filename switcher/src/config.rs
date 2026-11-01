@@ -60,6 +60,8 @@ pub struct Uxplay {
     pub quiet_others: bool,
     /// The `WM_CLASS` class of UxPlay's video window.
     pub window_class: String,
+    /// Keep Kodi from going idle while a device mirrors.
+    pub keep_kodi_awake: bool,
 }
 
 /// A `[kodi]` table as written, checked on the way to [`Kodi`].
@@ -88,6 +90,12 @@ struct RawUxplay {
     #[serde(default)]
     quiet_others: bool,
     window_class: Option<String>,
+    #[serde(default = "yes")]
+    keep_kodi_awake: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 impl From<RawKodi> for Kodi {
@@ -128,6 +136,7 @@ impl TryFrom<RawUxplay> for Uxplay {
             window_class: raw
                 .window_class
                 .unwrap_or_else(|| DEFAULT_UXPLAY_WINDOW_CLASS.to_owned()),
+            keep_kodi_awake: raw.keep_kodi_awake,
         })
     }
 }

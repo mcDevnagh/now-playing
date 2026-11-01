@@ -226,6 +226,35 @@ fn pauses_and_starts_together() {
 }
 
 #[test]
+fn noop_sends_a_noop_action() {
+    let got = written(vec![Input::Noop, Input::Noop]);
+    let noop = |id: u64| {
+        json!({
+            "id": id,
+            "jsonrpc": "2.0",
+            "method": "Input.ExecuteAction",
+            "params": {"action": "noop"},
+        })
+    };
+    assert_eq!(got, [noop(1), noop(2)]);
+}
+
+/// A no-op's "OK" reply doesn't count as the reply to a pause.
+#[test]
+fn noops_and_pauses_together() {
+    let got = written(vec![
+        Input::Pause,
+        Input::Noop,
+        reply(2, json!("OK")),
+        reply(1, players(&[1])),
+    ]);
+    assert_eq!(got.len(), 3);
+    assert_eq!(got[0], get_active_players(1));
+    assert_eq!(got[1]["method"], "Input.ExecuteAction");
+    assert_eq!(got[2], play_pause(3, 1));
+}
+
+#[test]
 fn old_connections_are_ignored() {
     let play: Value = serde_json::from_str(PLAY).unwrap();
     let mut follow = Follow::new(2, Vec::new());
