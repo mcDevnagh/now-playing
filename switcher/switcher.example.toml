@@ -16,6 +16,27 @@ quiet_others = true
 # Kodi's JSON-RPC TCP port. This is the default.
 address = "127.0.0.1:9090"
 
+# Run Now Playing as Kodi's screensaver. Set Kodi's own screensaver to
+# "Black", with its idle time, in each profile: the switcher runs this
+# command while Kodi's screensaver is up, and stops it when Kodi's stops,
+# as on playback or a phone's share. The command runs with the switcher's
+# environment, which kodi-steam's makes part of Kodi's Steam app, so its
+# window shows over Kodi's. With --screensaver, any key but the media keys
+# closes Now Playing, and the switcher then wakes Kodi. Leave the table out
+# to leave Kodi's screensaver alone.
+[kodi.screensaver]
+command = ["/home/deck/.local/bin/now-playing", "--screensaver",
+           "--server", "snapserver:1705"]
+
+# A profile with a table here loads another as Kodi's screensaver starts in
+# it, instead of running the command, so a locked profile is left after its
+# idle time while the other, unlocked, stays for Share to Kodi to play to.
+# The other's own screensaver then runs the command after its idle time.
+# Loading a profile stops playback; a paused movie keeps its resume point.
+# Profiles are named as Kodi shows them. Needs [kodi.screensaver].
+[kodi.profiles."Master user"]
+switch_to = "Guest"
+
 # Music starts on this machine's Snapcast client.
 [snapcast]
 # Snapcast starting pauses Kodi.

@@ -18,7 +18,12 @@ fn starts(input: &str) -> (usize, io::Result<()>) {
             connection: 1,
             message,
         };
-        follow.input(input, &mut || starts += 1).unwrap();
+        follow
+            .input(input, &mut |event| {
+                assert_eq!(event, Event::Started);
+                starts += 1
+            })
+            .unwrap();
         true
     });
     (starts, result)
@@ -104,7 +109,7 @@ fn players(ids: &[u64]) -> Value {
 fn written(inputs: Vec<Input>) -> Vec<Value> {
     let mut follow = Follow::new(1, Vec::new());
     for input in inputs {
-        follow.input(input, &mut || {}).unwrap();
+        follow.input(input, &mut |_| {}).unwrap();
     }
     let out = String::from_utf8(follow.into_out()).unwrap();
     let lines: Vec<Value> = out
@@ -213,7 +218,12 @@ fn pauses_and_starts_together() {
     let mut starts = 0;
     let play: Value = serde_json::from_str(PLAY).unwrap();
     for input in [Input::Pause, message(1, play), reply(1, players(&[1]))] {
-        follow.input(input, &mut || starts += 1).unwrap();
+        follow
+            .input(input, &mut |event| {
+                assert_eq!(event, Event::Started);
+                starts += 1
+            })
+            .unwrap();
     }
     assert_eq!(starts, 1);
     assert_eq!(
@@ -254,6 +264,79 @@ fn noops_and_pauses_together() {
     assert_eq!(got[2], play_pause(3, 1));
 }
 
+/// The events `inputs` give connection 1, and the lines it writes.
+fn events(inputs: Vec<Input>) -> (Vec<Event>, Vec<Value>) {
+    let mut follow = Follow::new(1, Vec::new());
+    let mut events = Vec::new();
+    for input in inputs {
+        follow
+            .input(input, &mut |event| events.push(event))
+            .unwrap();
+    }
+    let out = String::from_utf8(follow.into_out()).unwrap();
+    let lines = out.lines().map(|line| serde_json::from_str(line).unwrap());
+    (events, lines.collect())
+}
+
+fn notification(method: &str) -> Input {
+    message(
+        1,
+        json!({"jsonrpc": "2.0", "method": method, "params": {"data": null, "sender": "xbmc"}}),
+    )
+}
+
+#[test]
+fn screensaver_starts_and_stops() {
+    let (got, written) = events(vec![
+        notification("GUI.OnScreensaverActivated"),
+        // Jellyfin's, which isn't the user doing anything.
+        notification("Other.KeepAlive"),
+        notification("GUI.OnScreensaverDeactivated"),
+    ]);
+    assert_eq!(got, [Event::Screensaver(true), Event::Screensaver(false)]);
+    assert!(written.is_empty());
+}
+
+#[test]
+fn the_current_profile_is_asked_for_and_reported() {
+    let profile = json!({"label": "Master user"});
+    let (got, written) = events(vec![
+        Input::AskProfile,
+        // Another reply with a label isn't the answer.
+        reply(7, json!({"label": "Guest"})),
+        reply(1, profile),
+    ]);
+    assert_eq!(got, [Event::Profile("Master user".to_owned())]);
+    assert_eq!(
+        written,
+        [json!({"id": 1, "jsonrpc": "2.0", "method": "Profiles.GetCurrentProfile"})]
+    );
+}
+
+#[test]
+fn a_profile_reply_without_a_label_reports_nothing() {
+    let (got, _) = events(vec![Input::AskProfile, reply(1, json!({}))]);
+    assert_eq!(got, []);
+}
+
+#[test]
+fn load_profile_names_it() {
+    let (got, written) = events(vec![
+        Input::LoadProfile("Guest".to_owned()),
+        reply(1, json!("OK")),
+    ]);
+    assert_eq!(got, []);
+    assert_eq!(
+        written,
+        [json!({
+            "id": 1,
+            "jsonrpc": "2.0",
+            "method": "Profiles.LoadProfile",
+            "params": {"profile": "Guest"},
+        })]
+    );
+}
+
 #[test]
 fn old_connections_are_ignored() {
     let play: Value = serde_json::from_str(PLAY).unwrap();
@@ -270,7 +353,12 @@ fn old_connections_are_ignored() {
             error,
         },
     ] {
-        follow.input(input, &mut || starts += 1).unwrap();
+        follow
+            .input(input, &mut |event| {
+                assert_eq!(event, Event::Started);
+                starts += 1
+            })
+            .unwrap();
     }
     assert_eq!(starts, 0);
     let out = String::from_utf8(follow.into_out()).unwrap();
@@ -282,7 +370,7 @@ fn old_connections_are_ignored() {
         connection: 2,
         error,
     };
-    assert!(follow.input(close, &mut || {}).is_err());
+    assert!(follow.input(close, &mut |_| {}).is_err());
 }
 
 #[test]
@@ -312,7 +400,7 @@ fn follow_over_a_socket() {
     let (started, starts) = mpsc::channel();
     let connection = thread::spawn(move || {
         let stream = TcpStream::connect(address).unwrap();
-        follow(stream, 1, &inbox, &mut || started.send(()).unwrap())
+        follow(stream, 1, &inbox, &mut |_| started.send(()).unwrap())
     });
 
     let (mut socket, _) = kodi.accept().unwrap();

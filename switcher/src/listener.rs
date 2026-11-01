@@ -28,7 +28,7 @@ pub trait Listener: Send {
 /// starts, or its player may be quieted or kept awake: Snapcast's always,
 /// as its starts unmute our client; UxPlay's if it quiets the others, or
 /// keeps a Kodi with a table awake; Kodi's if any table quiets the others,
-/// or UxPlay's keeps it awake.
+/// UxPlay's keeps it awake, or it has a screensaver.
 pub fn from_config(
     config: &Config,
     display: Option<String>,
@@ -68,7 +68,10 @@ pub fn from_config(
     let keep_awake =
         config.kodi.is_some() && config.uxplay.as_ref().is_some_and(|t| t.keep_kodi_awake);
     let kodi = config.kodi.as_ref();
-    if let Some(table) = kodi.filter(|_| !quieting.is_empty() || keep_awake) {
+    let screensaver = kodi.and_then(|t| t.screensaver.clone());
+    if let Some(table) =
+        kodi.filter(|_| !quieting.is_empty() || keep_awake || screensaver.is_some())
+    {
         let (controller, inbox) = kodi::channel();
         kodi_controller = Some(controller);
         listeners.push(Box::new(kodi::Kodi {
@@ -87,10 +90,8 @@ pub fn from_config(
         }));
     }
     let others = Others::new(kodi_controller.clone(), snapcast_controller, quieting);
-    Ok((
-        listeners,
-        Dispatch::new(others, kodi_controller, keep_awake),
-    ))
+    let dispatch = Dispatch::new(others, kodi_controller, keep_awake, screensaver);
+    Ok((listeners, dispatch))
 }
 
 #[cfg(test)]

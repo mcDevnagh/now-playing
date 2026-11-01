@@ -88,6 +88,15 @@ fn keeping_kodi_awake_needs_both_tables() {
 }
 
 #[test]
+fn a_screensaver_gives_kodi_a_listener() {
+    let config = "[kodi.screensaver]\ncommand = [\"now-playing\"]";
+    assert_eq!(listeners(config), (1, (true, false), vec![], false));
+    let config = Config::parse(config).unwrap();
+    let (_, dispatch) = from_config(&config, None).unwrap();
+    assert!(dispatch.follows_screensaver());
+}
+
+#[test]
 fn uxplay_needs_a_display() {
     let config = Config::parse("[uxplay]\nquiet_others = true").unwrap();
     let err = from_config(&config, None).err().unwrap();

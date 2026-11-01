@@ -1,25 +1,38 @@
 //! The dispatch loop: what to do with what the listeners report. It quiets
-//! the other players when one starts, and keeps Kodi awake while a device
-//! mirrors to UxPlay.
+//! the other players when one starts, keeps Kodi awake while a device
+//! mirrors to UxPlay, and follows Kodi's screensaver: in a profile that
+//! switches, it loads the other profile; in any other, it runs the
+//! screensaver's command until Kodi's screensaver stops.
 
-use std::sync::mpsc::{Receiver, RecvTimeoutError};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
 
+use crate::config::Screensaver;
 use crate::listener::kodi;
 use crate::quiet::{Others, Player};
+use crate::screensaver::{self, Child};
 
 /// How often Kodi is sent a no-op while a device mirrors, well inside the
 /// shortest idle time Kodi's screensaver can be set to, a minute.
 const KEEP_AWAKE: Duration = Duration::from_secs(30);
 
 /// What the dispatch loop is asked to do.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
     /// A player started: quiet the others.
     Started(Player),
     /// Whether UxPlay's video window is open: sent as the listener
     /// (re)connects, then on each change.
     Mirroring(bool),
+    /// Kodi's screensaver started (`true`) or stopped.
+    Screensaver(bool),
+    /// Kodi's current profile, by name, as asked for.
+    Profile(String),
+    /// The connection to Kodi dropped, as when Kodi exits or loads a
+    /// profile, so its screensaver can't be followed.
+    KodiDisconnected,
+    /// Screensaver child `id` quit on its own, as on a key, or crashed.
+    ScreensaverExited { id: u64, status: String },
 }
 
 /// The dispatch loop's state. Held by its thread only.
@@ -31,15 +44,37 @@ pub struct Dispatch {
     keep_awake: bool,
     /// While Kodi's kept awake: when it's next sent a no-op.
     next_noop: Option<Instant>,
+    /// What to do as Kodi's screensaver starts: `[kodi.screensaver]`.
+    screensaver: Option<Screensaver>,
+    /// Whether Kodi's screensaver is up, as far as we know.
+    screensaver_up: bool,
+    /// The screensaver's command, while it runs.
+    child: Option<Child>,
+    /// The last child's id.
+    last_child: u64,
+    /// For children to report on; set by `run`.
+    tx: Option<Sender<Request>>,
+    dry_run: bool,
 }
 
 impl Dispatch {
-    pub fn new(others: Others, kodi: Option<kodi::Controller>, keep_awake: bool) -> Self {
+    pub fn new(
+        others: Others,
+        kodi: Option<kodi::Controller>,
+        keep_awake: bool,
+        screensaver: Option<Screensaver>,
+    ) -> Self {
         Dispatch {
             others,
             kodi,
             keep_awake,
             next_noop: None,
+            screensaver,
+            screensaver_up: false,
+            child: None,
+            last_child: 0,
+            tx: None,
+            dry_run: false,
         }
     }
 
@@ -54,47 +89,150 @@ impl Dispatch {
         self.keep_awake && self.kodi.is_some()
     }
 
-    /// Carries out `requests` forever, logging what it does. With `dry_run`,
-    /// it only logs what it would do.
-    pub fn run(mut self, requests: Receiver<Request>, dry_run: bool) -> ! {
+    /// Whether it follows Kodi's screensaver.
+    #[cfg(test)]
+    pub fn follows_screensaver(&self) -> bool {
+        self.screensaver.is_some() && self.kodi.is_some()
+    }
+
+    /// Carries out `requests` forever, logging what it does. `tx` is the
+    /// channel's sender, for children to report on. With `dry_run`, it only
+    /// logs what it would do.
+    pub fn run(mut self, tx: Sender<Request>, requests: Receiver<Request>, dry_run: bool) -> ! {
+        self.tx = Some(tx);
+        self.dry_run = dry_run;
         loop {
             let request = match self.next_noop {
                 Some(at) => {
                     match requests.recv_timeout(at.saturating_duration_since(Instant::now())) {
                         Ok(request) => Some(request),
                         Err(RecvTimeoutError::Timeout) => None,
-                        Err(RecvTimeoutError::Disconnected) => unreachable!("main holds a sender"),
+                        Err(RecvTimeoutError::Disconnected) => unreachable!("it holds a sender"),
                     }
                 }
-                None => Some(requests.recv().expect("main holds a sender")),
+                None => Some(requests.recv().expect("it holds a sender")),
             };
             let now = Instant::now();
             match request {
-                Some(request) => self.handle(request, now, dry_run),
-                None => self.tick(now, dry_run),
+                Some(request) => self.handle(request, now),
+                None => self.tick(now),
             }
         }
     }
 
     /// Carries out one request, at `now`.
-    fn handle(&mut self, request: Request, now: Instant, dry_run: bool) {
+    fn handle(&mut self, request: Request, now: Instant) {
         match request {
-            Request::Started(player) => self.others.started(player, dry_run),
-            Request::Mirroring(open) => self.mirroring(open, now, dry_run),
+            Request::Started(player) => self.others.started(player, self.dry_run),
+            Request::Mirroring(open) => self.mirroring(open, now),
+            Request::Screensaver(true) => self.screensaver_started(),
+            Request::Profile(name) => self.profile(&name),
+            Request::Screensaver(false) | Request::KodiDisconnected => {
+                self.screensaver_up = false;
+                self.stop_child();
+            }
+            Request::ScreensaverExited { id, status } => self.child_exited(id, &status),
+        }
+    }
+
+    /// Kodi's screensaver started: with profiles that switch, asks which
+    /// profile Kodi is in, to decide on its reply; otherwise starts the
+    /// command.
+    fn screensaver_started(&mut self) {
+        self.screensaver_up = true;
+        let (Some(screensaver), Some(kodi)) = (&self.screensaver, &self.kodi) else {
+            return;
+        };
+        match screensaver.switch_to.is_empty() {
+            true => self.start_child(),
+            false => kodi.ask_profile(),
+        }
+    }
+
+    /// Kodi's in profile `name`, as asked when its screensaver started:
+    /// loads the profile it switches to, if any, else starts the command.
+    /// The config never has a profile switch to itself, as Kodi loading
+    /// the profile it's in breaks it.
+    fn profile(&mut self, name: &str) {
+        // Stopped while we asked.
+        if !self.screensaver_up {
+            return;
+        }
+        let (Some(screensaver), Some(kodi)) = (&self.screensaver, &self.kodi) else {
+            return;
+        };
+        let Some(to) = screensaver.switch_to.get(name) else {
+            return self.start_child();
+        };
+        match self.dry_run {
+            false => {
+                eprintln!("switcher: kodi's screensaver started in profile {name}; loading {to}");
+                kodi.load_profile(to);
+            }
+            true => eprintln!(
+                "switcher: kodi's screensaver started in profile {name}; dry run: would load {to}"
+            ),
+        }
+    }
+
+    /// Starts the screensaver's command, unless it's running.
+    fn start_child(&mut self) {
+        let (Some(screensaver), None) = (&self.screensaver, &self.child) else {
+            return;
+        };
+        let program = &screensaver.command[0];
+        if self.dry_run {
+            return eprintln!("switcher: kodi's screensaver started; dry run: would run {program}");
+        }
+        let Some(tx) = &self.tx else { return };
+        self.last_child += 1;
+        match screensaver::spawn(&screensaver.command, self.last_child, tx.clone()) {
+            Ok(child) => {
+                eprintln!("switcher: kodi's screensaver started; running {program}");
+                self.child = Some(child);
+            }
+            // Kodi's own screensaver stays up.
+            Err(e) => {
+                eprintln!("switcher: kodi's screensaver started; couldn't run {program}: {e}")
+            }
+        }
+    }
+
+    /// Stops the screensaver's command, if it's running.
+    fn stop_child(&mut self) {
+        if self.child.take().is_some() {
+            eprintln!("switcher: stopping the screensaver");
+        }
+    }
+
+    /// Child `id` quit on its own: if Kodi's screensaver is still up, wakes
+    /// Kodi, so a key that closed the child gets back to Kodi. After a
+    /// crash, Kodi's screensaver starts again after its idle time, which
+    /// starts a new child.
+    fn child_exited(&mut self, id: u64, status: &str) {
+        if self.child.as_ref().is_none_or(|child| child.id != id) {
+            return;
+        }
+        self.child = None;
+        if self.screensaver_up {
+            eprintln!("switcher: the screensaver quit ({status}); waking kodi");
+            self.noop();
+        } else {
+            eprintln!("switcher: the screensaver quit ({status})");
         }
     }
 
     /// Starts keeping Kodi awake as mirroring starts, at once, as Kodi may
     /// be about to go idle, or already showing its screensaver; stops as it
     /// ends.
-    fn mirroring(&mut self, open: bool, now: Instant, dry_run: bool) {
+    fn mirroring(&mut self, open: bool, now: Instant) {
         if !self.keep_awake || self.kodi.is_none() {
             return;
         }
         match (open, self.next_noop) {
             (true, None) => {
                 eprintln!("switcher: mirroring; keeping kodi awake");
-                self.noop(dry_run);
+                self.noop();
                 self.next_noop = Some(now + KEEP_AWAKE);
             }
             (false, Some(_)) => {
@@ -106,15 +244,15 @@ impl Dispatch {
     }
 
     /// Sends Kodi its next no-op, if one's due at `now`.
-    fn tick(&mut self, now: Instant, dry_run: bool) {
+    fn tick(&mut self, now: Instant) {
         if self.next_noop.is_some_and(|at| now >= at) {
-            self.noop(dry_run);
+            self.noop();
             self.next_noop = Some(now + KEEP_AWAKE);
         }
     }
 
-    fn noop(&self, dry_run: bool) {
-        match (&self.kodi, dry_run) {
+    fn noop(&self) {
+        match (&self.kodi, self.dry_run) {
             (Some(_), true) => eprintln!("switcher: dry run: would send kodi a no-op"),
             (Some(kodi), false) => kodi.noop(),
             (None, _) => {}

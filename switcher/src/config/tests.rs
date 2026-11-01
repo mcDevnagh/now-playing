@@ -5,6 +5,12 @@ const FULL: &str = r#"
     quiet_others = true
     address = "kodi:9090"
 
+    [kodi.screensaver]
+    command = ["now-playing", "--screensaver"]
+
+    [kodi.profiles."Master user"]
+    switch_to = "Guest"
+
     [snapcast]
     server = "snapserver:1705"
     client = "TV"
@@ -24,6 +30,10 @@ fn full() {
             kodi: Some(Kodi {
                 quiet_others: true,
                 address: "kodi:9090".to_owned(),
+                screensaver: Some(Screensaver {
+                    command: vec!["now-playing".to_owned(), "--screensaver".to_owned()],
+                    switch_to: BTreeMap::from([("Master user".to_owned(), "Guest".to_owned())]),
+                }),
             }),
             snapcast: Some(Snapcast {
                 quiet_others: false,
@@ -129,6 +139,53 @@ fn an_old_config_names_every_removed_key() {
 }
 
 #[test]
+fn the_screensaver_is_optional_and_profiles_need_it() {
+    assert_eq!(
+        Config::parse("[kodi]").unwrap().kodi.unwrap().screensaver,
+        None
+    );
+    let config = Config::parse("[kodi.screensaver]\ncommand = [\"now-playing\"]").unwrap();
+    let screensaver = config.kodi.unwrap().screensaver.unwrap();
+    assert!(screensaver.switch_to.is_empty());
+    let cases = [
+        (
+            "[kodi.profiles.Pop]\nswitch_to = \"Kids\"",
+            "[kodi.profiles] needs [kodi.screensaver]",
+        ),
+        (
+            "[kodi.screensaver]\ncommand = []",
+            "[kodi.screensaver] `command` needs a program to run",
+        ),
+        (
+            "[kodi.screensaver]\ncommand = [\"\", \"--screensaver\"]",
+            "[kodi.screensaver] `command` needs a program to run",
+        ),
+        ("[kodi.screensaver]", "command"),
+        ("[kodi.screensaver]\ncommand = \"now-playing\"", "command"),
+        (
+            "[kodi.screensaver]\ncommand = [\"now-playing\"]\nargs = []",
+            "args",
+        ),
+        (
+            "[kodi.screensaver]\ncommand = [\"np\"]\n[kodi.profiles.Pop]\nswitch_to = \"Pop\"",
+            "[kodi.profiles.\"Pop\"] `switch_to` is the profile itself",
+        ),
+        (
+            "[kodi.screensaver]\ncommand = [\"np\"]\n[kodi.profiles.Pop]\nswitch_to = \"\"",
+            "[kodi.profiles.\"Pop\"] `switch_to` is empty",
+        ),
+        (
+            "[kodi.screensaver]\ncommand = [\"np\"]\n[kodi.profiles.Pop]\nlock = true",
+            "lock",
+        ),
+    ];
+    for (text, needle) in cases {
+        let err = Config::parse(text).unwrap_err();
+        assert!(err.contains(needle), "{text:?} gave {err:?}");
+    }
+}
+
+#[test]
 fn quiet_others_is_per_table_and_defaults_to_off() {
     let config = Config::parse("[kodi]").unwrap();
     assert!(!config.kodi.unwrap().quiet_others);
@@ -165,7 +222,11 @@ fn default_path_falls_back_to_home() {
 #[test]
 fn example_parses() {
     let config = Config::parse(include_str!("../../switcher.example.toml")).unwrap();
-    assert!(config.kodi.unwrap().quiet_others);
+    let kodi = config.kodi.unwrap();
+    assert!(kodi.quiet_others);
+    let screensaver = kodi.screensaver.unwrap();
+    assert_eq!(screensaver.command[1], "--screensaver");
+    assert_eq!(screensaver.switch_to["Master user"], "Guest");
     assert!(config.snapcast.unwrap().quiet_others);
     let uxplay = config.uxplay.unwrap();
     assert!(uxplay.quiet_others);

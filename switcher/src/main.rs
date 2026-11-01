@@ -6,6 +6,7 @@ mod action;
 mod config;
 mod listener;
 mod quiet;
+mod screensaver;
 mod windows;
 
 use std::path::PathBuf;
@@ -52,8 +53,5 @@ fn main() -> ExitCode {
         let tx = tx.clone();
         thread::spawn(move || listener.run(tx));
     }
-    // Keeps the channel open with no listeners, as with a config that
-    // follows nothing.
-    let _tx = tx;
-    dispatch.run(requests, args.dry_run)
+    dispatch.run(tx, requests, args.dry_run)
 }

@@ -1,5 +1,6 @@
-//! Follows Kodi's JSON-RPC notifications, reporting when playback starts,
-//! and pauses Kodi, or wakes it, when asked.
+//! Follows Kodi's JSON-RPC notifications, reporting when playback starts
+//! and when its screensaver starts and stops, and pauses Kodi, wakes it,
+//! or asks for or loads a profile, when asked.
 //!
 //! One thread owns the connection and the socket's writer. Everything it
 //! reacts to arrives on one channel: messages from a reader thread, and
@@ -18,7 +19,8 @@ use crate::action::Request;
 use crate::quiet::Player;
 
 /// Follows Kodi's JSON-RPC TCP port at `address`, reporting each play or
-/// resume, and carries out the commands that arrive in `inbox`.
+/// resume, its screensaver, the current profile when asked, and each
+/// disconnection, and carries out the commands that arrive in `inbox`.
 pub struct Kodi {
     pub address: String,
     pub inbox: Inbox,
@@ -38,13 +40,25 @@ impl Listener for Kodi {
                     eprintln!("kodi: connected to {address}");
                     backoff.reset();
                     connection += 1;
-                    let result = follow(stream, connection, &self.inbox, &mut || {
-                        eprintln!("kodi: playback started");
+                    let result = follow(stream, connection, &self.inbox, &mut |event| {
+                        let request = match event {
+                            Event::Started => {
+                                eprintln!("kodi: playback started");
+                                Request::Started(Player::Kodi)
+                            }
+                            Event::Screensaver(on) => {
+                                let what = if on { "started" } else { "stopped" };
+                                eprintln!("kodi: screensaver {what}");
+                                Request::Screensaver(on)
+                            }
+                            Event::Profile(label) => Request::Profile(label),
+                        };
                         // The dispatch loop outlives the listeners.
-                        let _ = requests.send(Request::Started(Player::Kodi));
+                        let _ = requests.send(request);
                     });
                     let reason = result.err().map_or("closed".to_owned(), |e| e.to_string());
                     eprintln!("kodi: {address}: disconnected ({reason}); retrying quietly");
+                    let _ = requests.send(Request::KodiDisconnected);
                     quiet = true;
                 }
                 Err(e) if !quiet => {
@@ -58,6 +72,17 @@ impl Listener for Kodi {
     }
 }
 
+/// What a connection reports.
+#[derive(Debug, PartialEq, Eq)]
+enum Event {
+    /// Playback started or resumed.
+    Started,
+    /// The screensaver started (`true`) or stopped.
+    Screensaver(bool),
+    /// The reply to `Controller::ask_profile`: the current profile's name.
+    Profile(String),
+}
+
 /// Everything the connection thread reacts to, on its one channel.
 enum Input {
     /// From the reader thread: a message from connection number
@@ -69,6 +94,10 @@ enum Input {
     Pause,
     /// Likewise.
     Noop,
+    /// Likewise.
+    AskProfile,
+    /// Likewise: the profile to load.
+    LoadProfile(String),
 }
 
 /// What other threads hold to ask the connection to do things. It can't
@@ -89,6 +118,24 @@ impl Controller {
     pub fn noop(&self) {
         let _ = self.0.send(Input::Noop);
     }
+
+    /// Asks the connection for the current profile, which it reports as a
+    /// [`Request::Profile`]. Never blocks; does nothing once the connection
+    /// thread has gone.
+    pub fn ask_profile(&self) {
+        let _ = self.0.send(Input::AskProfile);
+    }
+
+    /// Asks the connection to load the profile called `name`. Kodi closes
+    /// the connection as it does. Never blocks; does nothing once the
+    /// connection thread has gone.
+    ///
+    /// Never ask for the profile already loaded: Kodi stops that profile's
+    /// services, its JSON-RPC server among them, and never starts them
+    /// again.
+    pub fn load_profile(&self, name: &str) {
+        let _ = self.0.send(Input::LoadProfile(name.to_owned()));
+    }
 }
 
 /// The connection thread's end of [`channel`].
@@ -100,15 +147,17 @@ pub struct Inbox {
 }
 
 impl Inbox {
-    /// Takes the commands waiting, by name.
+    /// Takes the commands waiting, by name, as "pause" or "load Guest".
     #[cfg(test)]
-    pub fn take(&self) -> Vec<&'static str> {
+    pub fn take(&self) -> Vec<String> {
         let inputs = self.rx.try_iter();
         let names = inputs.map(|input| match input {
-            Input::Message { .. } => "message",
-            Input::Closed { .. } => "closed",
-            Input::Pause => "pause",
-            Input::Noop => "noop",
+            Input::Message { .. } => "message".to_owned(),
+            Input::Closed { .. } => "closed".to_owned(),
+            Input::Pause => "pause".to_owned(),
+            Input::Noop => "noop".to_owned(),
+            Input::AskProfile => "profile?".to_owned(),
+            Input::LoadProfile(name) => format!("load {name}"),
         });
         names.collect()
     }
@@ -116,7 +165,7 @@ impl Inbox {
     /// Takes the commands waiting, returning how many were pauses.
     #[cfg(test)]
     pub fn take_pauses(&self) -> usize {
-        self.take().iter().filter(|&&name| name == "pause").count()
+        self.take().iter().filter(|name| *name == "pause").count()
     }
 
     /// Drops everything waiting: commands asked for while Kodi was closed,
@@ -141,7 +190,7 @@ fn follow(
     stream: TcpStream,
     connection: u64,
     inbox: &Inbox,
-    on_start: &mut impl FnMut(),
+    on_event: &mut impl FnMut(Event),
 ) -> io::Result<()> {
     let socket = Socket(stream);
     inbox.discard_queued();
@@ -153,7 +202,7 @@ fn follow(
     loop {
         // `inbox` holds a sender, so this never fails.
         let input = inbox.rx.recv().expect("inbox sender dropped");
-        follow.input(input, on_start)?;
+        follow.input(input, on_event)?;
     }
 }
 
@@ -207,6 +256,8 @@ struct Follow<W> {
     /// answered. A newer one replaces it: its reply pauses the same players,
     /// so only one is needed.
     asked: Option<u64>,
+    /// Likewise for `Profiles.GetCurrentProfile`.
+    asked_profile: Option<u64>,
 }
 
 impl<W: Write> Follow<W> {
@@ -216,6 +267,7 @@ impl<W: Write> Follow<W> {
             out,
             id: 0,
             asked: None,
+            asked_profile: None,
         }
     }
 
@@ -225,12 +277,12 @@ impl<W: Write> Follow<W> {
     }
 
     /// Handles one input. An error ends the connection.
-    fn input(&mut self, input: Input, on_start: &mut impl FnMut()) -> io::Result<()> {
+    fn input(&mut self, input: Input, on_event: &mut impl FnMut(Event)) -> io::Result<()> {
         match input {
             // From a connection that has ended.
             Input::Message { connection, .. } | Input::Closed { connection, .. }
                 if connection != self.connection => {}
-            Input::Message { message, .. } => self.message(&message, on_start)?,
+            Input::Message { message, .. } => self.message(&message, on_event)?,
             Input::Closed { error, .. } => return Err(error),
             // Which players are active is asked each time: after a
             // reconnect, or with Kodi playing since before we started, no
@@ -249,17 +301,51 @@ impl<W: Write> Follow<W> {
                 self.id += 1;
                 writeln!(self.out, "{}", noop_request(self.id))?;
             }
+            Input::AskProfile => {
+                self.id += 1;
+                let request = json!({
+                    "id": self.id,
+                    "jsonrpc": "2.0",
+                    "method": "Profiles.GetCurrentProfile",
+                });
+                writeln!(self.out, "{request}")?;
+                self.asked_profile = Some(self.id);
+            }
+            Input::LoadProfile(name) => {
+                self.id += 1;
+                let request = json!({
+                    "id": self.id,
+                    "jsonrpc": "2.0",
+                    "method": "Profiles.LoadProfile",
+                    "params": {"profile": name},
+                });
+                writeln!(self.out, "{request}")?;
+            }
         }
         Ok(())
     }
 
-    fn message(&mut self, message: &Value, on_start: &mut impl FnMut()) -> io::Result<()> {
-        if is_start(message) {
-            on_start();
+    fn message(&mut self, message: &Value, on_event: &mut impl FnMut(Event)) -> io::Result<()> {
+        let event = match message["method"].as_str() {
+            Some("Player.OnPlay" | "Player.OnResume") => Some(Event::Started),
+            Some("GUI.OnScreensaverActivated") => Some(Event::Screensaver(true)),
+            Some("GUI.OnScreensaverDeactivated") => Some(Event::Screensaver(false)),
+            _ => None,
+        };
+        if let Some(event) = event {
+            on_event(event);
             return Ok(());
         }
         // Only replies have an id.
         let id = &message["id"];
+        if id.as_u64().is_some_and(|id| self.asked_profile == Some(id)) {
+            self.asked_profile = None;
+            match message["result"]["label"].as_str() {
+                Some(label) => on_event(Event::Profile(label.to_owned())),
+                None => eprintln!("kodi: no profile in {message}"),
+            }
+            return Ok(());
+        }
         let asked = id.as_u64().is_some_and(|id| self.asked == Some(id));
         if asked {
             self.asked = None;
@@ -287,13 +373,6 @@ impl<W: Write> Follow<W> {
         }
         Ok(())
     }
-}
-
-fn is_start(message: &Value) -> bool {
-    matches!(
-        message["method"].as_str(),
-        Some("Player.OnPlay" | "Player.OnResume")
-    )
 }
 
 /// The request that pauses `player`, and the only place one is made.

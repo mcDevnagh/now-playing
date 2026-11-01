@@ -1,5 +1,5 @@
-//! The TOML config: which players to follow, and whether each one's starts
-//! quiet the others.
+//! The TOML config: which players to follow, whether each one's starts
+//! quiet the others, and what to do when Kodi's screensaver starts.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -30,7 +30,7 @@ pub struct Config {
     pub uxplay: Option<Uxplay>,
 }
 
-/// Kodi playback.
+/// Kodi playback, and its screensaver.
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(try_from = "RawKodi")]
 pub struct Kodi {
@@ -38,6 +38,19 @@ pub struct Kodi {
     pub quiet_others: bool,
     /// Kodi's JSON-RPC TCP address.
     pub address: String,
+    /// What to do when Kodi's screensaver starts: `[kodi.screensaver]`,
+    /// with `[kodi.profiles]`.
+    pub screensaver: Option<Screensaver>,
+}
+
+/// What to do when Kodi's screensaver starts.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Screensaver {
+    /// The command to run while it's up, in a profile that doesn't switch.
+    pub command: Vec<String>,
+    /// The profiles that load another instead, by name, and the one each
+    /// loads.
+    pub switch_to: BTreeMap<String, String>,
 }
 
 /// Our Snapcast client starting to play.
@@ -71,6 +84,23 @@ struct RawKodi {
     #[serde(default)]
     quiet_others: bool,
     address: Option<String>,
+    screensaver: Option<RawScreensaver>,
+    #[serde(default)]
+    profiles: BTreeMap<String, RawProfile>,
+}
+
+/// A `[kodi.screensaver]` table as written.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawScreensaver {
+    command: Vec<String>,
+}
+
+/// A `[kodi.profiles."<name>"]` table as written.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawProfile {
+    switch_to: String,
 }
 
 /// A `[snapcast]` table as written, checked on the way to [`Snapcast`].
@@ -98,14 +128,49 @@ fn yes() -> bool {
     true
 }
 
-impl From<RawKodi> for Kodi {
-    fn from(raw: RawKodi) -> Self {
-        Self {
+impl TryFrom<RawKodi> for Kodi {
+    type Error = String;
+
+    fn try_from(raw: RawKodi) -> Result<Self, String> {
+        let screensaver = match raw.screensaver {
+            Some(screensaver) => Some(Screensaver::new(screensaver.command, raw.profiles)?),
+            None if raw.profiles.is_empty() => None,
+            None => {
+                return Err(
+                    "[kodi.profiles] needs [kodi.screensaver]: profiles switch as it starts"
+                        .to_owned(),
+                );
+            }
+        };
+        Ok(Self {
             quiet_others: raw.quiet_others,
             address: raw
                 .address
                 .unwrap_or_else(|| DEFAULT_KODI_ADDRESS.to_owned()),
+            screensaver,
+        })
+    }
+}
+
+impl Screensaver {
+    fn new(command: Vec<String>, profiles: BTreeMap<String, RawProfile>) -> Result<Self, String> {
+        if command.first().is_none_or(String::is_empty) {
+            return Err("[kodi.screensaver] `command` needs a program to run".to_owned());
         }
+        let mut switch_to = BTreeMap::new();
+        for (name, profile) in profiles {
+            // Kodi loading the profile already loaded leaves it broken.
+            if profile.switch_to == name {
+                return Err(format!(
+                    "[kodi.profiles.\"{name}\"] `switch_to` is the profile itself"
+                ));
+            }
+            if profile.switch_to.is_empty() {
+                return Err(format!("[kodi.profiles.\"{name}\"] `switch_to` is empty"));
+            }
+            switch_to.insert(name, profile.switch_to);
+        }
+        Ok(Self { command, switch_to })
     }
 }
 

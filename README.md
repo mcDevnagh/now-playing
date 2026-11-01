@@ -11,9 +11,9 @@ is playing, they're all there is, on black.
 It's built for a TV on a Linux HTPC, launched from Steam's Gaming Mode
 (gamescope), but runs on any Linux desktop with SDL3.
 
-A companion, [`now-playing-switcher`](#the-switcher), runs beside Kodi and
-quiets the other players when one starts: Kodi, Snapcast, and [UxPlay]
-mirroring a device's screen.
+A companion, [`now-playing-switcher`](#the-switcher), runs beside Kodi,
+runs Now Playing as Kodi's screensaver, and quiets the other players when
+one starts: Kodi, Snapcast, and [UxPlay] mirroring a device's screen.
 
 [Snapcast]: https://github.com/badaix/snapcast
 [UxPlay]: https://github.com/FDH2/UxPlay
@@ -179,6 +179,32 @@ would go idle and start its screensaver over the mirror. So, with a
 and every 30 s until it stops, which also ends a screensaver that's already
 up. Set `keep_kodi_awake = false` under `[uxplay]` to turn it off.
 
+### Kodi's screensaver
+
+With a `[kodi.screensaver]` table, the switcher runs its command, Now
+Playing with `--screensaver`, while Kodi's screensaver is up, and stops it
+when Kodi's stops, as when playback starts or a phone shares a video.
+Kodi's own screensaver, set to "Black", is underneath. The command runs
+with the switcher's environment, so under `kodi-steam` its window is part
+of Kodi's Steam app, and gamescope shows it over Kodi. A key on the remote
+closes Now Playing, and the switcher then sends Kodi a no-op so Kodi wakes
+too; if Now Playing crashes, the same happens, and Kodi's screensaver
+starts it again after Kodi's idle time.
+
+A profile can leave itself instead, as its screensaver starts: with
+`[kodi.profiles."Master user"]` `switch_to = "Guest"`, Kodi going idle in
+the master profile loads Guest, so master and its library stay behind the
+master lock while Share to Kodi still has an unlocked profile to play to.
+Guest's own screensaver then shows Now Playing after Guest's idle time.
+Loading a profile stops playback; a paused movie keeps its resume point.
+The switcher asks Kodi which profile it's in first, and never loads the
+one already loaded, which leaves Kodi without its JSON-RPC server until it
+restarts.
+
+Kodi doesn't start its screensaver during a video, and music starting
+doesn't bring Now Playing up by itself, so music over a video stays behind
+it.
+
 UxPlay reports nothing about a cast, so the switcher follows its video
 window instead, on `$DISPLAY`: UxPlay opens one when mirroring starts and
 closes it when mirroring stops. Audio-only AirPlay opens no window, so it
@@ -192,7 +218,9 @@ playing.
 
 1. **Kodi:** turn on Settings → Services → Control → "Allow remote control
    from applications on this system". That opens Kodi's JSON-RPC TCP port,
-   9090, which the switcher follows.
+   9090, which the switcher follows. For the screensaver, set Settings →
+   Interface → Screensaver to "Black", with its idle time. Kodi keeps both
+   per profile, so set them in each one.
 2. **Config:** copy `switcher/switcher.example.toml` to
    `~/.config/now-playing/switcher.toml` and fill it in. A config from
    when the switcher brought apps to the front is refused, with an error
@@ -217,8 +245,8 @@ now-playing-switcher [--config PATH] [--dry-run]
 - `--config`: the config file. Defaults to
   `$XDG_CONFIG_HOME/now-playing/switcher.toml`, else
   `~/.config/now-playing/switcher.toml`.
-- `--dry-run`: log what it would do, without pausing, muting or waking
-  Kodi.
+- `--dry-run`: log what it would do, without pausing, muting, waking
+  Kodi, loading a profile or running the screensaver.
 
 ## The placeholder window
 
@@ -257,6 +285,8 @@ now-playing-placeholder [--image PATH] [--title TITLE]
 | `switcher/` | The `now-playing-switcher` crate: quiets the other players |
 | `switcher/src/listener/` | Following Kodi, Snapcast and UxPlay for starts |
 | `switcher/src/quiet.rs` | What a start does to the other players |
+| `switcher/src/action.rs` | The dispatch loop: quieting, keeping Kodi awake, its screensaver |
+| `switcher/src/screensaver.rs` | Running and stopping the screensaver's command |
 | `switcher/src/windows.rs` | Following a display's windows, for UxPlay's |
 | `switcher/switcher.example.toml` | An example config |
 | `htpc/kodi-steam` | Launches Kodi from Steam, with UxPlay and the switcher |
