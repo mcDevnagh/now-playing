@@ -28,18 +28,3 @@ fn repeats_are_not_edges() {
         [None, None, Some(true), None, Some(false), None]
     );
 }
-
-#[test]
-fn shown_without_a_steam_game_id() {
-    let app = App {
-        gamescope: 3,
-        launch: Some(3 << 32 | 0x0200_0000),
-    };
-    assert_eq!(
-        without_launch(app),
-        App {
-            gamescope: 3,
-            launch: None,
-        }
-    );
-}

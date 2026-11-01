@@ -1,15 +1,11 @@
-//! Brings Now Playing, Kodi or UxPlay to the front in Steam Gaming Mode when
-//! they start playing, or a device starts mirroring to UxPlay, and can quiet
-//! the others when one does.
+//! Quiets the other players when one starts, so two never play over each
+//! other: Kodi, Snapcast, and UxPlay mirroring a device's screen. Runs
+//! beside Kodi, started by `htpc/kodi-steam`.
 
 mod action;
-mod app;
 mod config;
-mod gamescope;
 mod listener;
 mod quiet;
-mod startup;
-mod steam;
 mod windows;
 
 use std::path::PathBuf;
@@ -21,15 +17,14 @@ use clap::Parser;
 
 use config::Config;
 
-/// Brings Now Playing, Kodi or UxPlay to the front when they start playing.
+/// Quiets the other players when one starts.
 #[derive(Parser)]
 #[command(version, about)]
 struct Args {
     /// The config file [default: $XDG_CONFIG_HOME/now-playing/switcher.toml].
     #[arg(long, value_name = "PATH")]
     config: Option<PathBuf>,
-    /// Log what each action would do, without switching, launching, pausing
-    /// or muting.
+    /// Log what it would do, without pausing or muting.
     #[arg(long)]
     dry_run: bool,
 }
@@ -40,9 +35,11 @@ fn main() -> ExitCode {
         eprintln!("switcher: no --config given, and neither $XDG_CONFIG_HOME nor $HOME is set");
         return ExitCode::FAILURE;
     };
-    let loaded = Config::load(&path)
-        .and_then(|config| Ok((listener::from_config(&config)?, config.launch_at_start())));
-    let ((listeners, others), at_start) = match loaded {
+    let display = std::env::var("DISPLAY")
+        .ok()
+        .filter(|display| !display.is_empty());
+    let loaded = Config::load(&path).and_then(|config| listener::from_config(&config, display));
+    let (listeners, others) = match loaded {
         Ok(loaded) => loaded,
         Err(e) => {
             eprintln!("switcher: {e}");
@@ -50,20 +47,13 @@ fn main() -> ExitCode {
         }
     };
 
-    let (show, requests) = mpsc::channel();
+    let (tx, requests) = mpsc::channel();
     for listener in listeners {
-        let show = show.clone();
-        thread::spawn(move || listener.run(show));
-    }
-
-    let display = gamescope::display();
-    if !at_start.is_empty() {
-        let display = display.clone();
-        let show = show.clone();
-        thread::spawn(move || startup::run(at_start, &display, show));
+        let tx = tx.clone();
+        thread::spawn(move || listener.run(tx));
     }
     for request in requests {
-        action::handle(request, &others, &display, args.dry_run);
+        action::handle(request, &others, args.dry_run);
     }
-    unreachable!("the channel's sender is kept alive by `show`")
+    unreachable!("the channel's sender is kept alive by `tx`")
 }

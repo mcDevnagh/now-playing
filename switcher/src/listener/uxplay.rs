@@ -8,71 +8,50 @@ use now_playing_core::net::Backoff;
 
 use super::Listener;
 use crate::action::Request;
-use crate::app::App;
 use crate::quiet::Player;
-use crate::{steam, windows};
+use crate::windows;
 
-/// Follows windows of class `window_class` on the display of the app with
-/// gamescope ID `gamescope`, reporting with `app` whenever one opens.
+/// Follows windows of class `window_class` on `display`, the display
+/// UxPlay's windows open on, reporting whenever one opens.
 pub struct Uxplay {
     pub window_class: String,
-    pub gamescope: u32,
-    /// The app to show on a start; `None` without
-    /// `show_on_playback`.
-    pub app: Option<App>,
+    pub display: String,
 }
 
 impl Listener for Uxplay {
-    /// UxPlay often isn't running, as outside Gaming Mode, so only the first
+    /// The display can go away, as gamescope restarting, so only the first
     /// failure of each outage is logged.
     fn run(self: Box<Self>, requests: Sender<Request>) -> ! {
-        let class = &self.window_class;
-        // A cast means UxPlay is running, and launching a running app makes
-        // Steam show an error, so it's asked for without its Steam game ID.
-        let app = self.app.map(without_launch);
+        let Uxplay {
+            window_class: class,
+            display,
+        } = *self;
         let mut backoff = Backoff::new();
         let mut quiet = false;
         loop {
-            let reason = match steam::display_of(self.gamescope) {
-                Ok(display) => {
-                    let mut edges = UxplayEdges::default();
-                    let reason = windows::follow(&display, class, |open| {
-                        if edges.last.is_none() {
-                            eprintln!("uxplay: following {class} windows on {display}");
-                            backoff.reset();
-                            quiet = false;
-                        }
-                        match edges.update(open) {
-                            Some(true) => {
-                                eprintln!("uxplay: mirroring started");
-                                // The dispatch loop outlives the listeners.
-                                let _ = requests.send(Request::PlaybackStarted {
-                                    player: Player::Uxplay,
-                                    app,
-                                });
-                            }
-                            Some(false) => eprintln!("uxplay: mirroring stopped"),
-                            None => {}
-                        }
-                    });
-                    format!("{display}: {reason}")
+            let mut edges = UxplayEdges::default();
+            let reason = windows::follow(&display, &class, |open| {
+                if edges.last.is_none() {
+                    eprintln!("uxplay: following {class} windows on {display}");
+                    backoff.reset();
+                    quiet = false;
                 }
-                Err(e) => e,
-            };
+                match edges.update(open) {
+                    Some(true) => {
+                        eprintln!("uxplay: mirroring started");
+                        // The dispatch loop outlives the listeners.
+                        let _ = requests.send(Request::Started(Player::Uxplay));
+                    }
+                    Some(false) => eprintln!("uxplay: mirroring stopped"),
+                    None => {}
+                }
+            });
             if !quiet {
-                eprintln!("uxplay: {reason}; retrying quietly");
+                eprintln!("uxplay: {display}: {reason}; retrying quietly");
                 quiet = true;
             }
             thread::sleep(backoff.next_delay());
         }
-    }
-}
-
-/// `app` without its Steam game ID, so showing it can't launch it.
-fn without_launch(app: App) -> App {
-    App {
-        launch: None,
-        ..app
     }
 }
 

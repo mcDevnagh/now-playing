@@ -13,23 +13,25 @@ use crate::action::Request;
 use crate::config::Config;
 use crate::quiet::{Others, Player};
 
-/// Follows a player, sending [`Request::PlaybackStarted`] on `requests`
-/// whenever it starts. Holds everything it needs, such as addresses; the
-/// rules for what counts as a start are its own.
+/// Follows a player, sending [`Request::Started`] on `requests` whenever
+/// it starts. Holds everything it needs, such as addresses; the rules for
+/// what counts as a start are its own.
 pub trait Listener: Send {
     /// Runs forever, reconnecting as needed.
     fn run(self: Box<Self>, requests: Sender<Request>) -> !;
 }
 
 /// The listeners `config` asks for, and what their starts do to the
-/// players.
+/// players. `display` is `$DISPLAY`, where UxPlay's windows open.
 ///
 /// A table gets a listener when there's something to do on its player's
 /// starts, or its player may be quieted: Snapcast's always, as its starts
-/// unmute our client; Kodi's if it shows on playback, or any table quiets
-/// the others; UxPlay's if it shows on playback or quiets the others. A
-/// listener's `app` is `None` without `show_on_playback`.
-pub fn from_config(config: &Config) -> Result<(Vec<Box<dyn Listener>>, Others), String> {
+/// unmute our client; Kodi's if any table quiets the others; UxPlay's if it
+/// quiets the others.
+pub fn from_config(
+    config: &Config,
+    display: Option<String>,
+) -> Result<(Vec<Box<dyn Listener>>, Others), String> {
     let quieting: Vec<Player> = [
         (Player::Kodi, config.kodi.as_ref().map(|t| t.quiet_others)),
         (
@@ -59,26 +61,26 @@ pub fn from_config(config: &Config) -> Result<(Vec<Box<dyn Listener>>, Others), 
         listeners.push(Box::new(snapcast::Snapcast {
             server: table.server.clone(),
             client,
-            app: table.show_on_playback.then_some(table.app),
             inbox,
         }));
     }
     let kodi = config.kodi.as_ref();
-    if let Some(table) = kodi.filter(|t| t.show_on_playback || !quieting.is_empty()) {
+    if let Some(table) = kodi.filter(|_| !quieting.is_empty()) {
         let (controller, inbox) = kodi::channel();
         kodi_controller = Some(controller);
         listeners.push(Box::new(kodi::Kodi {
             address: table.address.clone(),
-            app: table.show_on_playback.then_some(table.app),
             inbox,
         }));
     }
     let uxplay = config.uxplay.as_ref();
-    if let Some(table) = uxplay.filter(|t| t.show_on_playback || t.quiet_others) {
+    if let Some(table) = uxplay.filter(|t| t.quiet_others) {
+        let display = display.ok_or(
+            "[uxplay] needs $DISPLAY, the display UxPlay's windows open on; kodi-steam passes it down",
+        )?;
         listeners.push(Box::new(uxplay::Uxplay {
             window_class: table.window_class.clone(),
-            gamescope: table.app.gamescope,
-            app: table.show_on_playback.then_some(table.app),
+            display,
         }));
     }
     let others = Others::new(kodi_controller, snapcast_controller, quieting);

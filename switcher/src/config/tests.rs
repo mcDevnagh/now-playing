@@ -2,24 +2,16 @@ use super::*;
 
 const FULL: &str = r#"
     [kodi]
-    gamescope_id = 1
-    show_on_playback = true
+    quiet_others = true
     address = "kodi:9090"
 
     [snapcast]
-    gamescope_id = 2457742405
-    steam_game_id = 10555923251500941312
-    show_on_playback = true
     server = "snapserver:1705"
     client = "TV"
-    launch_at_start = true
-    launch_at_start_wait = 5
 
     [uxplay]
-    gamescope_id = 3
-    steam_game_id = 12918456320
+    quiet_others = true
     window_class = "Mirror"
-    launch_at_start = true
 "#;
 
 #[test]
@@ -29,131 +21,50 @@ fn full() {
         config,
         Config {
             kodi: Some(Kodi {
-                app: App {
-                    gamescope: 1,
-                    launch: None,
-                },
-                show_on_playback: true,
-                quiet_others: false,
+                quiet_others: true,
                 address: "kodi:9090".to_owned(),
-                launch_at_start: None,
             }),
             snapcast: Some(Snapcast {
-                app: App {
-                    gamescope: 2457742405,
-                    launch: Some(10555923251500941312),
-                },
-                show_on_playback: true,
                 quiet_others: false,
                 server: "snapserver:1705".to_owned(),
                 client: Some("TV".to_owned()),
-                launch_at_start: Some(Duration::from_secs(5)),
             }),
             uxplay: Some(Uxplay {
-                app: App {
-                    gamescope: 3,
-                    launch: Some(12918456320),
-                },
-                show_on_playback: false,
-                quiet_others: false,
+                quiet_others: true,
                 window_class: "Mirror".to_owned(),
-                launch_at_start: Some(Duration::from_secs(DEFAULT_LAUNCH_AT_START_WAIT)),
             }),
-        }
-    );
-}
-
-#[test]
-fn launch_at_start() {
-    assert_eq!(
-        Config::parse(FULL).unwrap().launch_at_start(),
-        [
-            (
-                App {
-                    gamescope: 2457742405,
-                    launch: Some(10555923251500941312),
-                },
-                Duration::from_secs(5)
-            ),
-            (
-                App {
-                    gamescope: 3,
-                    launch: Some(12918456320),
-                },
-                Duration::from_secs(DEFAULT_LAUNCH_AT_START_WAIT)
-            ),
-        ]
-    );
-    let kodi =
-        "[kodi]\ngamescope_id = 1\nsteam_game_id = 10375237194288726016\nlaunch_at_start = true";
-    let config = Config::parse(kodi).unwrap();
-    let wait = Duration::from_secs(DEFAULT_LAUNCH_AT_START_WAIT);
-    assert_eq!(config.launch_at_start(), [(config.kodi.unwrap().app, wait)]);
-    assert_eq!(
-        Config::parse("[kodi]\ngamescope_id = 1")
-            .unwrap()
-            .launch_at_start(),
-        []
-    );
-}
-
-#[test]
-fn ids_are_taken_as_given() {
-    // A Steam game ID whose top 32 bits aren't the gamescope ID: neither is
-    // worked out from, or checked against, the other.
-    let kodi = Config::parse("[kodi]\ngamescope_id = 7\nsteam_game_id = 10375237194288726016")
-        .unwrap()
-        .kodi
-        .unwrap();
-    assert_eq!(
-        kodi.app,
-        App {
-            gamescope: 7,
-            launch: Some(10375237194288726016),
         }
     );
 }
 
 #[test]
 fn minimal_uxplay_takes_the_default_window_class() {
-    let config = Config::parse("[uxplay]\ngamescope_id = 3").unwrap();
+    let config = Config::parse("[uxplay]").unwrap();
     let uxplay = config.uxplay.unwrap();
-    assert_eq!(uxplay.app.gamescope, 3);
     assert_eq!(uxplay.window_class, DEFAULT_UXPLAY_WINDOW_CLASS);
-    assert_eq!(uxplay.launch_at_start, None);
     assert_eq!((config.kodi, config.snapcast), (None, None));
-}
-
-#[test]
-fn show_on_playback_defaults_to_off() {
-    let config = Config::parse("[uxplay]\ngamescope_id = 3").unwrap();
-    assert!(!config.uxplay.unwrap().show_on_playback);
-    let config = Config::parse("[uxplay]\ngamescope_id = 3\nshow_on_playback = true").unwrap();
-    assert!(config.uxplay.unwrap().show_on_playback);
 }
 
 #[test]
 fn a_table_can_do_nothing() {
     for table in ["[kodi]", "[uxplay]", "[snapcast]\nserver = \"s:1705\""] {
-        let text = format!("{table}\ngamescope_id = 1\nsteam_game_id = 10375237194288726016");
-        assert!(Config::parse(&text).is_ok(), "{text:?}");
+        assert!(Config::parse(table).is_ok(), "{table:?}");
     }
 }
 
 #[test]
 fn minimal_kodi_takes_the_default_address() {
-    let config = Config::parse("[kodi]\ngamescope_id = 1").unwrap();
+    let config = Config::parse("[kodi]").unwrap();
     assert_eq!(config.kodi.unwrap().address, DEFAULT_KODI_ADDRESS);
     assert_eq!(config.snapcast, None);
 }
 
 #[test]
 fn minimal_snapcast() {
-    let snapcast = Config::parse("[snapcast]\ngamescope_id = 2\nserver = \"s:1705\"")
+    let snapcast = Config::parse("[snapcast]\nserver = \"s:1705\"")
         .unwrap()
         .snapcast
         .unwrap();
-    assert_eq!(snapcast.app.gamescope, 2);
     assert_eq!(snapcast.client, None);
 }
 
@@ -162,62 +73,19 @@ fn minimal_snapcast() {
 fn errors() {
     let cases = [
         ("", "[kodi], [snapcast] or [uxplay]"),
-        ("[kodi]", "gamescope_id"),
+        ("[kodi]\napp = 1", "app"),
+        ("[snapcast]", "server"),
+        ("[snapcast]\nserver = \"\"", "server"),
+        ("[kodi]\nport = 9090", "port"),
+        ("[kodi]\nquiet_others = 1", "quiet_others"),
         (
-            "[kodi]\nsteam_game_id = 10375237194288726016",
-            "gamescope_id",
-        ),
-        ("[kodi]\ngamescope_id = -1", "gamescope_id"),
-        ("[kodi]\ngamescope_id = 1\napp = 1", "app"),
-        ("[kodi]\ngamescope_id = 1\nlaunch = 1", "launch"),
-        ("[snapcast]\nserver = \"s:1705\"", "gamescope_id"),
-        ("[snapcast]\ngamescope_id = 2", "server"),
-        ("[snapcast]\ngamescope_id = 2\nserver = \"\"", "server"),
-        (
-            "[snapcast]\ngamescope_id = 4294967296\nserver = \"s:1705\"",
-            "gamescope_id",
-        ),
-        ("[kodi]\ngamescope_id = 1\nport = 9090", "port"),
-        (
-            "[kodi]\ngamescope_id = 1\nshow_on_playback = 1",
-            "show_on_playback",
-        ),
-        (
-            "[kodi]\ngamescope_id = 1\nlaunch_at_start = true",
-            "[kodi] `launch_at_start` needs `steam_game_id`",
-        ),
-        (
-            "[snapcast]\ngamescope_id = 2\nserver = \"s:1705\"\nlaunch_at_start = true",
-            "[snapcast] `launch_at_start` needs `steam_game_id`",
-        ),
-        (
-            "[kodi]\ngamescope_id = 1\nlaunch_at_start = 1",
-            "launch_at_start",
-        ),
-        ("[uxplay]", "gamescope_id"),
-        (
-            "[uxplay]\ngamescope_id = 3\nwindow_class = \"\"",
+            "[uxplay]\nwindow_class = \"\"",
             "[uxplay] `window_class` is empty",
         ),
-        (
-            "[uxplay]\ngamescope_id = 3\nlaunch_at_start = true",
-            "[uxplay] `launch_at_start` needs `steam_game_id`",
-        ),
-        (
-            "[uxplay]\ngamescope_id = 3\nfile = \"~/.uxplay.dacp\"",
-            "file",
-        ),
-        (
-            "[kodi]\ngamescope_id = 1\nsteam_game_id = 10375237194288726016\nlaunch_at_start_wait = 5",
-            "[kodi] `launch_at_start_wait` needs `launch_at_start = true`",
-        ),
-        (
-            "[kodi]\ngamescope_id = 1\nsteam_game_id = 10375237194288726016\nlaunch_at_start = true\nlaunch_at_start_wait = -1",
-            "launch_at_start_wait",
-        ),
-        ("[kodi]\ngamescope_id = 1\n[spotify]", "spotify"),
-        ("gamescope_id = 1", "gamescope_id"),
-        ("[kodi\ngamescope_id = 1", "kodi"),
+        ("[uxplay]\nfile = \"~/.uxplay.dacp\"", "file"),
+        ("[kodi]\n[spotify]", "spotify"),
+        ("address = \"kodi:9090\"", "address"),
+        ("[kodi\naddress = \"kodi:9090\"", "kodi"),
     ];
     for (text, needle) in cases {
         let err = Config::parse(text).unwrap_err();
@@ -226,24 +94,47 @@ fn errors() {
 }
 
 #[test]
+fn typed_errors_point_at_the_line() {
+    let err = Config::parse("[kodi]\nquiet_others = true\nport = 9090").unwrap_err();
+    assert!(err.contains("line 3"), "{err}");
+}
+
+#[test]
+fn an_old_config_names_every_removed_key() {
+    let old = r#"
+        [kodi]
+        gamescope_id = 1
+        show_on_playback = true
+        quiet_others = true
+
+        [snapcast]
+        gamescope_id = 2
+        steam_game_id = 10555923251500941312
+        server = "snapserver:1705"
+
+        [uxplay]
+        launch_at_start = true
+        launch_at_start_wait = 5
+    "#;
+    let err = Config::parse(old).unwrap_err();
+    assert_eq!(
+        err,
+        "the switcher no longer brings apps to the front, so remove \
+         kodi.gamescope_id, kodi.show_on_playback, snapcast.gamescope_id, \
+         snapcast.steam_game_id, uxplay.launch_at_start, uxplay.launch_at_start_wait"
+    );
+}
+
+#[test]
 fn quiet_others_is_per_table_and_defaults_to_off() {
-    let config = Config::parse("[kodi]\ngamescope_id = 1").unwrap();
+    let config = Config::parse("[kodi]").unwrap();
     assert!(!config.kodi.unwrap().quiet_others);
-    let text = "[kodi]\ngamescope_id = 1\nquiet_others = true\n[uxplay]\ngamescope_id = 3";
-    let config = Config::parse(text).unwrap();
+    let config = Config::parse("[kodi]\nquiet_others = true\n[uxplay]").unwrap();
     assert!(config.kodi.unwrap().quiet_others);
     assert!(!config.uxplay.unwrap().quiet_others);
-    for (text, needle) in [
-        ("[kodi]\ngamescope_id = 1\nquiet_others = 1", "quiet_others"),
-        // Not top-level any more.
-        (
-            "quiet_others = true\n[kodi]\ngamescope_id = 1",
-            "quiet_others",
-        ),
-    ] {
-        let err = Config::parse(text).unwrap_err();
-        assert!(err.contains(needle), "{text:?} gave {err:?}");
-    }
+    // Not top-level.
+    let err = Config::parse("quiet_others = true\n[kodi]").unwrap_err();
+    assert!(err.contains("quiet_others"), "{err}");
 }
 
 #[test]
@@ -271,14 +162,9 @@ fn default_path_falls_back_to_home() {
 #[test]
 fn example_parses() {
     let config = Config::parse(include_str!("../../switcher.example.toml")).unwrap();
-    let kodi = config.kodi.unwrap();
-    assert_eq!(kodi.app.gamescope, 1234567890);
-    assert!(kodi.show_on_playback && kodi.quiet_others);
-    let snapcast = config.snapcast.unwrap();
-    assert_eq!(snapcast.app.gamescope, 2345678901);
-    assert!(snapcast.show_on_playback && snapcast.quiet_others);
+    assert!(config.kodi.unwrap().quiet_others);
+    assert!(config.snapcast.unwrap().quiet_others);
     let uxplay = config.uxplay.unwrap();
-    assert_eq!(uxplay.app.gamescope, 3456789012);
-    assert!(uxplay.show_on_playback && uxplay.quiet_others);
+    assert!(uxplay.quiet_others);
     assert_eq!(uxplay.window_class, "GStreamer");
 }

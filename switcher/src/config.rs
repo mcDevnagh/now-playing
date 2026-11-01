@@ -1,18 +1,26 @@
-//! The TOML config: which listeners to start, and the app each one shows.
+//! The TOML config: which players to follow, and whether each one's starts
+//! quiet the others.
 
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use serde::Deserialize;
-
-use crate::app::App;
+use serde::de::IgnoredAny;
 
 const DEFAULT_KODI_ADDRESS: &str = "127.0.0.1:9090";
 /// The `WM_CLASS` class of GStreamer's video window, which UxPlay opens.
 const DEFAULT_UXPLAY_WINDOW_CLASS: &str = "GStreamer";
-/// How long an app launched at start has to come to the front, in seconds.
-const DEFAULT_LAUNCH_AT_START_WAIT: u64 = 30;
+/// Keys from when the switcher brought apps to the front, which it no
+/// longer does. A config with any of them is refused, rather than run
+/// without doing what it asks.
+const REMOVED_KEYS: [&str; 5] = [
+    "gamescope_id",
+    "steam_game_id",
+    "show_on_playback",
+    "launch_at_start",
+    "launch_at_start_wait",
+];
 
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -22,125 +30,74 @@ pub struct Config {
     pub uxplay: Option<Uxplay>,
 }
 
-/// Kodi playback → show Kodi.
+/// Kodi playback.
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(try_from = "RawKodi")]
 pub struct Kodi {
-    pub app: App,
-    /// Bring the app to the front when the player starts.
-    pub show_on_playback: bool,
     /// Quiet the other players when this one starts.
     pub quiet_others: bool,
     /// Kodi's JSON-RPC TCP address.
     pub address: String,
-    /// Launch the app each time Gaming Mode starts, then go home once it's in
-    /// front, or after this long.
-    pub launch_at_start: Option<Duration>,
 }
 
-/// Our Snapcast client starting to play → show an app.
+/// Our Snapcast client starting to play.
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(try_from = "RawSnapcast")]
 pub struct Snapcast {
-    pub app: App,
-    /// Bring the app to the front when the player starts.
-    pub show_on_playback: bool,
     /// Quiet the other players when this one starts.
     pub quiet_others: bool,
     /// snapserver's JSON-RPC address.
     pub server: String,
     /// The client to follow [default: this machine's hostname].
     pub client: Option<String>,
-    /// Launch the app each time Gaming Mode starts, then go home once it's in
-    /// front, or after this long.
-    pub launch_at_start: Option<Duration>,
 }
 
-/// UxPlay's video window opening, as a device starts mirroring → show
-/// UxPlay.
+/// UxPlay's video window opening, as a device starts mirroring.
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(try_from = "RawUxplay")]
 pub struct Uxplay {
-    pub app: App,
-    /// Bring the app to the front when the player starts.
-    pub show_on_playback: bool,
     /// Quiet the other players when this one starts.
     pub quiet_others: bool,
     /// The `WM_CLASS` class of UxPlay's video window.
     pub window_class: String,
-    /// Launch the app each time Gaming Mode starts, then go home once it's in
-    /// front, or after this long.
-    pub launch_at_start: Option<Duration>,
 }
 
 /// A `[kodi]` table as written, checked on the way to [`Kodi`].
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawKodi {
-    gamescope_id: u32,
-    steam_game_id: Option<u64>,
-    #[serde(default)]
-    show_on_playback: bool,
     #[serde(default)]
     quiet_others: bool,
     address: Option<String>,
-    #[serde(default)]
-    launch_at_start: bool,
-    launch_at_start_wait: Option<u64>,
 }
 
 /// A `[snapcast]` table as written, checked on the way to [`Snapcast`].
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawSnapcast {
-    gamescope_id: u32,
-    steam_game_id: Option<u64>,
-    #[serde(default)]
-    show_on_playback: bool,
     #[serde(default)]
     quiet_others: bool,
     server: String,
     client: Option<String>,
-    #[serde(default)]
-    launch_at_start: bool,
-    launch_at_start_wait: Option<u64>,
 }
 
 /// A `[uxplay]` table as written, checked on the way to [`Uxplay`].
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawUxplay {
-    gamescope_id: u32,
-    steam_game_id: Option<u64>,
-    #[serde(default)]
-    show_on_playback: bool,
     #[serde(default)]
     quiet_others: bool,
     window_class: Option<String>,
-    #[serde(default)]
-    launch_at_start: bool,
-    launch_at_start_wait: Option<u64>,
 }
 
-impl TryFrom<RawKodi> for Kodi {
-    type Error = String;
-
-    fn try_from(raw: RawKodi) -> Result<Self, String> {
-        let app = App {
-            gamescope: raw.gamescope_id,
-            launch: raw.steam_game_id,
-        };
-        let launch_at_start =
-            launch_at_start("kodi", app, raw.launch_at_start, raw.launch_at_start_wait)?;
-        Ok(Self {
-            app,
-            show_on_playback: raw.show_on_playback,
+impl From<RawKodi> for Kodi {
+    fn from(raw: RawKodi) -> Self {
+        Self {
             quiet_others: raw.quiet_others,
             address: raw
                 .address
                 .unwrap_or_else(|| DEFAULT_KODI_ADDRESS.to_owned()),
-            launch_at_start,
-        })
+        }
     }
 }
 
@@ -151,23 +108,10 @@ impl TryFrom<RawSnapcast> for Snapcast {
         if raw.server.is_empty() {
             return Err("[snapcast] `server` is empty".to_owned());
         }
-        let app = App {
-            gamescope: raw.gamescope_id,
-            launch: raw.steam_game_id,
-        };
-        let launch_at_start = launch_at_start(
-            "snapcast",
-            app,
-            raw.launch_at_start,
-            raw.launch_at_start_wait,
-        )?;
         Ok(Self {
-            app,
-            show_on_playback: raw.show_on_playback,
             quiet_others: raw.quiet_others,
             server: raw.server,
             client: raw.client,
-            launch_at_start,
         })
     }
 }
@@ -179,43 +123,12 @@ impl TryFrom<RawUxplay> for Uxplay {
         if raw.window_class.as_deref() == Some("") {
             return Err("[uxplay] `window_class` is empty".to_owned());
         }
-        let app = App {
-            gamescope: raw.gamescope_id,
-            launch: raw.steam_game_id,
-        };
-        let launch_at_start =
-            launch_at_start("uxplay", app, raw.launch_at_start, raw.launch_at_start_wait)?;
         Ok(Self {
-            app,
-            show_on_playback: raw.show_on_playback,
             quiet_others: raw.quiet_others,
             window_class: raw
                 .window_class
                 .unwrap_or_else(|| DEFAULT_UXPLAY_WINDOW_CLASS.to_owned()),
-            launch_at_start,
         })
-    }
-}
-
-/// A table's `launch_at_start` and `launch_at_start_wait`, checked:
-/// launching needs a Steam game ID, and the wait is only for launching.
-fn launch_at_start(
-    table: &str,
-    app: App,
-    launch_at_start: bool,
-    wait: Option<u64>,
-) -> Result<Option<Duration>, String> {
-    match (launch_at_start, wait) {
-        (true, _) if app.launch.is_none() => {
-            Err(format!("[{table}] `launch_at_start` needs `steam_game_id`"))
-        }
-        (true, wait) => Ok(Some(Duration::from_secs(
-            wait.unwrap_or(DEFAULT_LAUNCH_AT_START_WAIT),
-        ))),
-        (false, Some(_)) => Err(format!(
-            "[{table}] `launch_at_start_wait` needs `launch_at_start = true`"
-        )),
-        (false, None) => Ok(None),
     }
 }
 
@@ -228,25 +141,51 @@ impl Config {
 
     /// Parses and checks a config file's contents.
     pub fn parse(text: &str) -> Result<Self, String> {
+        // Keys only first, so an old config's removed keys are all named,
+        // then typed, for errors that point at the line. (Not as a
+        // `toml::Table`: an old `steam_game_id` is too big for its i64.)
+        if let Ok(keys) = toml::from_str::<BTreeMap<String, Keys>>(text) {
+            check_removed(&keys)?;
+        }
         let config: Self = toml::from_str(text).map_err(|e| e.to_string())?;
         if config.kodi.is_none() && config.snapcast.is_none() && config.uxplay.is_none() {
             return Err("needs a [kodi], [snapcast] or [uxplay] table".to_owned());
         }
         Ok(config)
     }
+}
 
-    /// The apps to launch once Steam's UI is up, each with how long it has
-    /// to come to the front: those whose tables set `launch_at_start`.
-    pub fn launch_at_start(&self) -> Vec<(App, Duration)> {
-        let kodi = self.kodi.as_ref().map(|t| (t.app, t.launch_at_start));
-        let snapcast = self.snapcast.as_ref().map(|t| (t.app, t.launch_at_start));
-        let uxplay = self.uxplay.as_ref().map(|t| (t.app, t.launch_at_start));
-        kodi.into_iter()
-            .chain(snapcast)
-            .chain(uxplay)
-            .filter_map(|(app, wait)| Some((app, wait?)))
-            .collect()
+/// A top-level value's keys, if it's a table.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Keys {
+    Table(BTreeMap<String, IgnoredAny>),
+    Other(IgnoredAny),
+}
+
+/// An error naming every [`REMOVED_KEYS`] key in the player tables, if
+/// there are any, so an old config is fixed in one go.
+fn check_removed(config: &BTreeMap<String, Keys>) -> Result<(), String> {
+    let found: Vec<String> = ["kodi", "snapcast", "uxplay"]
+        .into_iter()
+        .filter_map(|name| match config.get(name)? {
+            Keys::Table(table) => Some((name, table)),
+            Keys::Other(_) => None,
+        })
+        .flat_map(|(name, table)| {
+            REMOVED_KEYS
+                .into_iter()
+                .filter(|key| table.contains_key(*key))
+                .map(move |key| format!("{name}.{key}"))
+        })
+        .collect();
+    if found.is_empty() {
+        return Ok(());
     }
+    Err(format!(
+        "the switcher no longer brings apps to the front, so remove {}",
+        found.join(", ")
+    ))
 }
 
 /// `$XDG_CONFIG_HOME/now-playing/switcher.toml`, falling back to

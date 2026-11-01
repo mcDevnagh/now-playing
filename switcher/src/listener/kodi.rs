@@ -15,16 +15,12 @@ use serde_json::{Value, json};
 
 use super::Listener;
 use crate::action::Request;
-use crate::app::App;
 use crate::quiet::Player;
 
 /// Follows Kodi's JSON-RPC TCP port at `address`, reporting each play or
-/// resume with `app`, and pauses Kodi when `inbox` is asked to.
+/// resume, and pauses Kodi when `inbox` is asked to.
 pub struct Kodi {
     pub address: String,
-    /// The app to show on a start; `None` without
-    /// `show_on_playback`.
-    pub app: Option<App>,
     pub inbox: Inbox,
 }
 
@@ -45,10 +41,7 @@ impl Listener for Kodi {
                     let result = follow(stream, connection, &self.inbox, &mut || {
                         eprintln!("kodi: playback started");
                         // The dispatch loop outlives the listeners.
-                        let _ = requests.send(Request::PlaybackStarted {
-                            player: Player::Kodi,
-                            app: self.app,
-                        });
+                        let _ = requests.send(Request::Started(Player::Kodi));
                     });
                     let reason = result.err().map_or("closed".to_owned(), |e| e.to_string());
                     eprintln!("kodi: {address}: disconnected ({reason}); retrying quietly");

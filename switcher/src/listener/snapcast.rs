@@ -8,18 +8,13 @@ use now_playing_core::state::{State, now_playing};
 
 use super::Listener;
 use crate::action::Request;
-use crate::app::App;
 use crate::quiet::Player;
 
-/// Follows `client` on the snapserver at `server`, reporting with `app`
-/// whenever the client starts playing, and sending it the mutes that arrive
-/// in `inbox`.
+/// Follows `client` on the snapserver at `server`, reporting whenever the
+/// client starts playing, and sending it the mutes that arrive in `inbox`.
 pub struct Snapcast {
     pub server: String,
     pub client: String,
-    /// The app to show on a start; `None` without
-    /// `show_on_playback`.
-    pub app: Option<App>,
     pub inbox: Inbox,
 }
 
@@ -28,7 +23,6 @@ impl Listener for Snapcast {
         let Snapcast {
             server,
             client,
-            app,
             inbox,
         } = *self;
         eprintln!("snapcast: following client {client} on {server}");
@@ -37,10 +31,7 @@ impl Listener for Snapcast {
             if edges.update(playing(stream)) {
                 eprintln!("snapcast: client {client} started playing");
                 // The dispatch loop outlives the listeners.
-                let _ = requests.send(Request::PlaybackStarted {
-                    player: Player::Snapcast,
-                    app,
-                });
+                let _ = requests.send(Request::Started(Player::Snapcast));
             }
         })
     }
