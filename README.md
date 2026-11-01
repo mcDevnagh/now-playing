@@ -11,7 +11,7 @@ is playing, they're all there is, on black.
 It's built for a TV on a Linux HTPC, launched from Steam's Gaming Mode
 (gamescope), but runs on any Linux desktop with SDL3.
 
-A companion, [`now-playing-switcher`](#the-switcher), runs beside Kodi,
+A companion, [`now-playing-quieter`](#the-quieter), runs beside Kodi,
 runs Now Playing as Kodi's screensaver, and quiets the other players when
 one starts: Kodi, Snapcast, and [UxPlay] mirroring a device's screen.
 
@@ -118,7 +118,7 @@ cargo test
 ```
 
 This builds the two binaries in `target/release/`: `now-playing` and
-`now-playing-switcher`. The switcher needs no system libraries.
+`now-playing-quieter`. The quieter needs no system libraries.
 
 The binary links the system libSDL3 and glibc, so build it against the
 same versions as the machine it runs on. For a Fedora-based target such
@@ -135,7 +135,7 @@ The binaries are then in `target/fedora/release/`.
 ## Running from Steam Gaming Mode
 
 On the HTPC, Steam has one shortcut, Kodi, pointing at `htpc/kodi-steam`.
-That script starts the switcher and UxPlay beside Kodi's Flatpak, each in
+That script starts the quieter and UxPlay beside Kodi's Flatpak, each in
 its own process group, waits on Kodi, and stops all three whichever way it
 ends: Kodi exiting, or Steam's "Exit game". Started under Steam, their
 windows are part of Kodi's app, so gamescope shows UxPlay's mirror over
@@ -143,7 +143,7 @@ Kodi. The commands are set at the top of the script; its own log and each
 program's output go to `$XDG_STATE_HOME/now-playing/` (by default
 `~/.local/state/now-playing/`).
 
-1. Copy `kodi-steam`, `now-playing-switcher` and `now-playing` to
+1. Copy `kodi-steam`, `now-playing-quieter` and `now-playing` to
    `~/.local/bin/`.
 2. In Desktop Mode, add `kodi-steam` to Steam as a non-Steam game. Its
    launch options go to UxPlay; UxPlay also reads `~/.config/uxplayrc`.
@@ -152,9 +152,9 @@ program's output go to `$XDG_STATE_HOME/now-playing/` (by default
 Now Playing can also run on its own: add it to Steam as a non-Steam game,
 with `--server` and `--client` in its launch options if needed.
 
-## The switcher
+## The quieter
 
-`now-playing-switcher` runs beside Kodi, started by `kodi-steam`. When a
+`now-playing-quieter` runs beside Kodi, started by `kodi-steam`. When a
 player whose table sets `quiet_others = true` starts, it quiets the
 others, so two never play over each other:
 
@@ -173,19 +173,19 @@ reconnect.
 
 While a device mirrors to UxPlay, the remote isn't touching Kodi, so Kodi
 would go idle and start its screensaver over the mirror. So, with a
-`[kodi]` table, the switcher sends Kodi a no-op action as mirroring starts
+`[kodi]` table, the quieter sends Kodi a no-op action as mirroring starts
 and every 30 s until it stops, which also ends a screensaver that's already
 up. Set `keep_kodi_awake = false` under `[uxplay]` to turn it off.
 
 ### Kodi's screensaver
 
-With a `[kodi.screensaver]` table, the switcher runs its command, Now
+With a `[kodi.screensaver]` table, the quieter runs its command, Now
 Playing with `--screensaver`, while Kodi's screensaver is up, and stops it
 when Kodi's stops, as when playback starts or a phone shares a video.
 Kodi's own screensaver, set to "Black", is underneath. The command runs
-with the switcher's environment, so under `kodi-steam` its window is part
+with the quieter's environment, so under `kodi-steam` its window is part
 of Kodi's Steam app, and gamescope shows it over Kodi. A key on the remote
-closes Now Playing, and the switcher then sends Kodi a no-op so Kodi wakes
+closes Now Playing, and the quieter then sends Kodi a no-op so Kodi wakes
 too; if Now Playing crashes, the same happens, and Kodi's screensaver
 starts it again after Kodi's idle time.
 
@@ -195,7 +195,7 @@ the master profile loads Guest, so master and its library stay behind the
 master lock while Share to Kodi still has an unlocked profile to play to.
 Guest's own screensaver then shows Now Playing after Guest's idle time.
 Loading a profile stops playback; a paused movie keeps its resume point.
-The switcher asks Kodi which profile it's in first, and never loads the
+The quieter asks Kodi which profile it's in first, and never loads the
 one already loaded, which leaves Kodi without its JSON-RPC server until it
 restarts.
 
@@ -203,7 +203,7 @@ Kodi doesn't start its screensaver during a video, and music starting
 doesn't bring Now Playing up by itself, so music over a video stays behind
 it.
 
-UxPlay reports nothing about a cast, so the switcher follows its video
+UxPlay reports nothing about a cast, so the quieter follows its video
 window instead, on `$DISPLAY`: UxPlay opens one when mirroring starts and
 closes it when mirroring stops. Audio-only AirPlay opens no window, so it
 doesn't quiet anything.
@@ -216,18 +216,18 @@ playing.
 
 1. **Kodi:** turn on Settings → Services → Control → "Allow remote control
    from applications on this system". That opens Kodi's JSON-RPC TCP port,
-   9090, which the switcher follows. For the screensaver, set Settings →
+   9090, which the quieter follows. For the screensaver, set Settings →
    Interface → Screensaver to "Black", with its idle time. Kodi keeps both
    per profile, so set them in each one.
-2. **Config:** copy `switcher/switcher.example.toml` to
-   `~/.config/now-playing/switcher.toml` and fill it in. A config from
-   when the switcher brought apps to the front is refused, with an error
-   naming the keys to remove.
+2. **Config:** copy `quieter/quieter.example.toml` to
+   `~/.config/now-playing/quieter.toml` and fill it in. An old
+   `switcher.toml` from `now-playing-switcher`, which brought apps to the
+   front, is refused, with an error naming the keys to remove.
 
 Its log, one line per event and decision, is in
-`~/.local/state/now-playing/switcher.log`.
+`~/.local/state/now-playing/quieter.log`.
 
-The switcher finds UxPlay's video window by its `WM_CLASS` class,
+The quieter finds UxPlay's video window by its `WM_CLASS` class,
 `GStreamer`; set `window_class` if yours differs:
 
 ```
@@ -237,12 +237,12 @@ xprop WM_CLASS    # on UxPlay's display, then click the video window
 ### Usage
 
 ```
-now-playing-switcher [--config PATH] [--dry-run]
+now-playing-quieter [--config PATH] [--dry-run]
 ```
 
 - `--config`: the config file. Defaults to
-  `$XDG_CONFIG_HOME/now-playing/switcher.toml`, else
-  `~/.config/now-playing/switcher.toml`.
+  `$XDG_CONFIG_HOME/now-playing/quieter.toml`, else
+  `~/.config/now-playing/quieter.toml`.
 - `--dry-run`: log what it would do, without pausing, muting, waking
   Kodi, loading a profile or running the screensaver.
 
@@ -263,14 +263,14 @@ now-playing-switcher [--config PATH] [--dry-run]
 | `app/src/debug/` | `--print`, `--fake` and `--fake-weather`, debug builds only |
 | `app/assets/fonts/` | The bundled Noto Sans fonts |
 | `app/assets/weather/` | The bundled weather icons, from Breezy Weather |
-| `switcher/` | The `now-playing-switcher` crate: quiets the other players |
-| `switcher/src/listener/` | Following Kodi, Snapcast and UxPlay for starts |
-| `switcher/src/quiet.rs` | What a start does to the other players |
-| `switcher/src/action.rs` | The dispatch loop: quieting, keeping Kodi awake, its screensaver |
-| `switcher/src/screensaver.rs` | Running and stopping the screensaver's command |
-| `switcher/src/windows.rs` | Following a display's windows, for UxPlay's |
-| `switcher/switcher.example.toml` | An example config |
-| `htpc/kodi-steam` | Launches Kodi from Steam, with UxPlay and the switcher |
+| `quieter/` | The `now-playing-quieter` crate: quiets the other players |
+| `quieter/src/listener/` | Following Kodi, Snapcast and UxPlay for starts |
+| `quieter/src/quiet.rs` | What a start does to the other players |
+| `quieter/src/action.rs` | The dispatch loop: quieting, keeping Kodi awake, its screensaver |
+| `quieter/src/screensaver.rs` | Running and stopping the screensaver's command |
+| `quieter/src/windows.rs` | Following a display's windows, for UxPlay's |
+| `quieter/quieter.example.toml` | An example config |
+| `htpc/kodi-steam` | Launches Kodi from Steam, with UxPlay and the quieter |
 | `spikes/sdl-hello/` | The SDL2 spike that tested gamescope |
 
 ## License

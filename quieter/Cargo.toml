@@ -1,5 +1,5 @@
 [package]
-name = "now-playing-switcher"
+name = "now-playing-quieter"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true

@@ -13,7 +13,7 @@ fn starts_and_stops() {
     );
 }
 
-/// Mirroring already on when the switcher connects isn't a start, but its
+/// Mirroring already on when the quieter connects isn't a start, but its
 /// end is a stop.
 #[test]
 fn the_first_value_is_a_baseline() {

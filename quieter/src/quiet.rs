@@ -16,7 +16,7 @@ use now_playing_core::snapcast;
 
 use crate::listener::kodi;
 
-/// A player the switcher follows.
+/// A player the quieter follows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Player {
     Kodi,
@@ -100,7 +100,7 @@ impl Others {
         if quiets.is_empty() {
             return;
         }
-        eprintln!("switcher: {}", describe(started, &quiets, dry_run));
+        eprintln!("quieter: {}", describe(started, &quiets, dry_run));
         if dry_run {
             return;
         }

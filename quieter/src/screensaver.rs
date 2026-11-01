@@ -45,7 +45,7 @@ pub fn spawn(command: &[String], id: u64, requests: Sender<Request>) -> io::Resu
                     return;
                 }
                 Ok(None) => {}
-                Err(e) => eprintln!("switcher: screensaver {id}: {e}"),
+                Err(e) => eprintln!("quieter: screensaver {id}: {e}"),
             }
             match stopped.recv_timeout(POLL) {
                 Err(RecvTimeoutError::Timeout) => {}

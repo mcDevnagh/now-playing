@@ -22,7 +22,7 @@ use config::Config;
 #[derive(Parser)]
 #[command(version, about)]
 struct Args {
-    /// The config file [default: $XDG_CONFIG_HOME/now-playing/switcher.toml].
+    /// The config file [default: $XDG_CONFIG_HOME/now-playing/quieter.toml].
     #[arg(long, value_name = "PATH")]
     config: Option<PathBuf>,
     /// Log what it would do, without pausing or muting.
@@ -33,7 +33,7 @@ struct Args {
 fn main() -> ExitCode {
     let args = Args::parse();
     let Some(path) = args.config.or_else(config::default_path) else {
-        eprintln!("switcher: no --config given, and neither $XDG_CONFIG_HOME nor $HOME is set");
+        eprintln!("quieter: no --config given, and neither $XDG_CONFIG_HOME nor $HOME is set");
         return ExitCode::FAILURE;
     };
     let display = std::env::var("DISPLAY")
@@ -43,7 +43,7 @@ fn main() -> ExitCode {
     let (listeners, dispatch) = match loaded {
         Ok(loaded) => loaded,
         Err(e) => {
-            eprintln!("switcher: {e}");
+            eprintln!("quieter: {e}");
             return ExitCode::FAILURE;
         }
     };

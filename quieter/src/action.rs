@@ -166,11 +166,11 @@ impl Dispatch {
         };
         match self.dry_run {
             false => {
-                eprintln!("switcher: kodi's screensaver started in profile {name}; loading {to}");
+                eprintln!("quieter: kodi's screensaver started in profile {name}; loading {to}");
                 kodi.load_profile(to);
             }
             true => eprintln!(
-                "switcher: kodi's screensaver started in profile {name}; dry run: would load {to}"
+                "quieter: kodi's screensaver started in profile {name}; dry run: would load {to}"
             ),
         }
     }
@@ -182,18 +182,18 @@ impl Dispatch {
         };
         let program = &screensaver.command[0];
         if self.dry_run {
-            return eprintln!("switcher: kodi's screensaver started; dry run: would run {program}");
+            return eprintln!("quieter: kodi's screensaver started; dry run: would run {program}");
         }
         let Some(tx) = &self.tx else { return };
         self.last_child += 1;
         match screensaver::spawn(&screensaver.command, self.last_child, tx.clone()) {
             Ok(child) => {
-                eprintln!("switcher: kodi's screensaver started; running {program}");
+                eprintln!("quieter: kodi's screensaver started; running {program}");
                 self.child = Some(child);
             }
             // Kodi's own screensaver stays up.
             Err(e) => {
-                eprintln!("switcher: kodi's screensaver started; couldn't run {program}: {e}")
+                eprintln!("quieter: kodi's screensaver started; couldn't run {program}: {e}")
             }
         }
     }
@@ -201,7 +201,7 @@ impl Dispatch {
     /// Stops the screensaver's command, if it's running.
     fn stop_child(&mut self) {
         if self.child.take().is_some() {
-            eprintln!("switcher: stopping the screensaver");
+            eprintln!("quieter: stopping the screensaver");
         }
     }
 
@@ -215,10 +215,10 @@ impl Dispatch {
         }
         self.child = None;
         if self.screensaver_up {
-            eprintln!("switcher: the screensaver quit ({status}); waking kodi");
+            eprintln!("quieter: the screensaver quit ({status}); waking kodi");
             self.noop();
         } else {
-            eprintln!("switcher: the screensaver quit ({status})");
+            eprintln!("quieter: the screensaver quit ({status})");
         }
     }
 
@@ -231,12 +231,12 @@ impl Dispatch {
         }
         match (open, self.next_noop) {
             (true, None) => {
-                eprintln!("switcher: mirroring; keeping kodi awake");
+                eprintln!("quieter: mirroring; keeping kodi awake");
                 self.noop();
                 self.next_noop = Some(now + KEEP_AWAKE);
             }
             (false, Some(_)) => {
-                eprintln!("switcher: mirroring stopped; no longer keeping kodi awake");
+                eprintln!("quieter: mirroring stopped; no longer keeping kodi awake");
                 self.next_noop = None;
             }
             _ => {}
@@ -253,7 +253,7 @@ impl Dispatch {
 
     fn noop(&self) {
         match (&self.kodi, self.dry_run) {
-            (Some(_), true) => eprintln!("switcher: dry run: would send kodi a no-op"),
+            (Some(_), true) => eprintln!("quieter: dry run: would send kodi a no-op"),
             (Some(kodi), false) => kodi.noop(),
             (None, _) => {}
         }

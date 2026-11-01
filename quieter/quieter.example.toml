@@ -1,7 +1,7 @@
-# now-playing-switcher's config. Copy it to
-# ~/.config/now-playing/switcher.toml and fill in your own values.
+# now-playing-quieter's config. Copy it to
+# ~/.config/now-playing/quieter.toml and fill in your own values.
 #
-# The switcher runs beside Kodi, started by htpc/kodi-steam. Each table
+# The quieter runs beside Kodi, started by htpc/kodi-steam. Each table
 # follows one player; leave a table out to not follow it. With
 # `quiet_others = true`, the player starting quiets the others, so two never
 # play over each other: Kodi is paused, and this machine's Snapcast client is
@@ -17,12 +17,12 @@ quiet_others = true
 address = "127.0.0.1:9090"
 
 # Run Now Playing as Kodi's screensaver. Set Kodi's own screensaver to
-# "Black", with its idle time, in each profile: the switcher runs this
+# "Black", with its idle time, in each profile: the quieter runs this
 # command while Kodi's screensaver is up, and stops it when Kodi's stops,
-# as on playback or a phone's share. The command runs with the switcher's
+# as on playback or a phone's share. The command runs with the quieter's
 # environment, which kodi-steam's makes part of Kodi's Steam app, so its
 # window shows over Kodi's. With --screensaver, any key but the media keys
-# closes Now Playing, and the switcher then wakes Kodi. Leave the table out
+# closes Now Playing, and the quieter then wakes Kodi. Leave the table out
 # to leave Kodi's screensaver alone.
 [kodi.screensaver]
 command = ["/home/deck/.local/bin/now-playing", "--screensaver",

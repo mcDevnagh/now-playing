@@ -76,7 +76,7 @@ impl UxplayEdges {
     /// `Some(false)` if it just stopped.
     ///
     /// The first value is a baseline, so mirroring that was already on when
-    /// the switcher (re)connected doesn't count.
+    /// the quieter (re)connected doesn't count.
     fn update(&mut self, open: bool) -> Option<bool> {
         let edge = self.last.filter(|&last| last != open).map(|_| open);
         self.last = Some(open);

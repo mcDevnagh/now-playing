@@ -1,11 +1,11 @@
 #!/bin/sh
-# Launches Kodi from Steam, with UxPlay and the switcher beside it, and stops
+# Launches Kodi from Steam, with UxPlay and the quieter beside it, and stops
 # them with it. Add it to Steam as a non-Steam game; its launch options go to
 # UxPlay.
 
 # Steam's PATH may not have ~/.local/bin, and Kodi on SteamOS is usually a
 # Flatpak, so change these to match.
-switcher_cmd="$HOME/.local/bin/now-playing-switcher"
+quieter_cmd="$HOME/.local/bin/now-playing-quieter"
 uxplay_cmd="uxplay"
 kodi_cmd="flatpak run tv.kodi.Kodi"
 
@@ -14,8 +14,8 @@ mkdir -p "$log"
 exec >>"$log/kodi-steam.log" 2>&1
 echo "$(date '+%F %T') starting, PATH=$PATH"
 
-setsid $switcher_cmd >>"$log/switcher.log" 2>&1 &
-switcher=$!
+setsid $quieter_cmd >>"$log/quieter.log" 2>&1 &
+quieter=$!
 setsid $uxplay_cmd "$@" >>"$log/uxplay.log" 2>&1 &
 uxplay=$!
 setsid $kodi_cmd >>"$log/kodi.log" 2>&1 &
@@ -25,7 +25,7 @@ kodi=$!
 # processes; Flatpak's sandbox may leave its own, so it's asked to stop Kodi
 # too. Steam's "Exit game" may signal only this script, so a signal ends Kodi
 # too, and whatever ends, the rest go with it.
-trap 'kill -- -$kodi -$switcher -$uxplay 2>/dev/null; flatpak kill tv.kodi.Kodi 2>/dev/null' EXIT
+trap 'kill -- -$kodi -$quieter -$uxplay 2>/dev/null; flatpak kill tv.kodi.Kodi 2>/dev/null' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 

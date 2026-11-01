@@ -78,7 +78,7 @@ fn window(conn: &RustConnection, class: &str) -> Window {
 ///
 /// ```sh
 /// Xvfb :99 &
-/// X_DISPLAY=:99 cargo test -p now-playing-switcher -- --ignored
+/// X_DISPLAY=:99 cargo test -p now-playing-quieter -- --ignored
 /// ```
 #[test]
 #[ignore = "needs an X server at $X_DISPLAY"]

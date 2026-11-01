@@ -132,7 +132,7 @@ fn an_old_config_names_every_removed_key() {
     let err = Config::parse(old).unwrap_err();
     assert_eq!(
         err,
-        "the switcher no longer brings apps to the front, so remove \
+        "the quieter doesn't bring apps to the front, as the switcher did, so remove \
          kodi.gamescope_id, kodi.show_on_playback, snapcast.gamescope_id, \
          snapcast.steam_game_id, uxplay.launch_at_start, uxplay.launch_at_start_wait"
     );
@@ -199,19 +199,19 @@ fn quiet_others_is_per_table_and_defaults_to_off() {
 
 #[test]
 fn load_names_the_file() {
-    let err = Config::load(Path::new("/nonexistent/switcher.toml")).unwrap_err();
-    assert!(err.starts_with("/nonexistent/switcher.toml: "), "{err}");
+    let err = Config::load(Path::new("/nonexistent/quieter.toml")).unwrap_err();
+    assert!(err.starts_with("/nonexistent/quieter.toml: "), "{err}");
 }
 
 #[test]
 fn default_path_prefers_xdg_config_home() {
     let path = default_path_from(Some("/xdg".into()), Some("/home/me".into()));
-    assert_eq!(path.unwrap(), Path::new("/xdg/now-playing/switcher.toml"));
+    assert_eq!(path.unwrap(), Path::new("/xdg/now-playing/quieter.toml"));
 }
 
 #[test]
 fn default_path_falls_back_to_home() {
-    let expected = Path::new("/home/me/.config/now-playing/switcher.toml");
+    let expected = Path::new("/home/me/.config/now-playing/quieter.toml");
     for xdg in [None, Some("".into()), Some("relative".into())] {
         let path = default_path_from(xdg, Some("/home/me".into()));
         assert_eq!(path.unwrap(), expected);
@@ -221,7 +221,7 @@ fn default_path_falls_back_to_home() {
 
 #[test]
 fn example_parses() {
-    let config = Config::parse(include_str!("../../switcher.example.toml")).unwrap();
+    let config = Config::parse(include_str!("../../quieter.example.toml")).unwrap();
     let kodi = config.kodi.unwrap();
     assert!(kodi.quiet_others);
     let screensaver = kodi.screensaver.unwrap();

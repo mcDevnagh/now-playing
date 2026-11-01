@@ -511,7 +511,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "now-playing-switcher"
+name = "now-playing-quieter"
 version = "0.1.0"
 dependencies = [
  "clap",

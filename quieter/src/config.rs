@@ -11,8 +11,8 @@ use serde::de::IgnoredAny;
 const DEFAULT_KODI_ADDRESS: &str = "127.0.0.1:9090";
 /// The `WM_CLASS` class of GStreamer's video window, which UxPlay opens.
 const DEFAULT_UXPLAY_WINDOW_CLASS: &str = "GStreamer";
-/// Keys from when the switcher brought apps to the front, which it no
-/// longer does. A config with any of them is refused, rather than run
+/// Keys from now-playing-switcher, which brought apps to the front, as the
+/// quieter doesn't. A config with any of them is refused, rather than run
 /// without doing what it asks.
 const REMOVED_KEYS: [&str; 5] = [
     "gamescope_id",
@@ -257,13 +257,13 @@ fn check_removed(config: &BTreeMap<String, Keys>) -> Result<(), String> {
         return Ok(());
     }
     Err(format!(
-        "the switcher no longer brings apps to the front, so remove {}",
+        "the quieter doesn't bring apps to the front, as the switcher did, so remove {}",
         found.join(", ")
     ))
 }
 
-/// `$XDG_CONFIG_HOME/now-playing/switcher.toml`, falling back to
-/// `~/.config/now-playing/switcher.toml`. `None` without either variable.
+/// `$XDG_CONFIG_HOME/now-playing/quieter.toml`, falling back to
+/// `~/.config/now-playing/quieter.toml`. `None` without either variable.
 pub fn default_path() -> Option<PathBuf> {
     default_path_from(
         std::env::var_os("XDG_CONFIG_HOME"),
@@ -277,7 +277,7 @@ fn default_path_from(xdg_config_home: Option<OsString>, home: Option<OsString>) 
         .map(PathBuf::from)
         .filter(|dir| dir.is_absolute())
         .or_else(|| home.map(|home| PathBuf::from(home).join(".config")))?;
-    Some(config.join("now-playing").join("switcher.toml"))
+    Some(config.join("now-playing").join("quieter.toml"))
 }
 
 #[cfg(test)]
