@@ -1,5 +1,5 @@
 [workspace]
-members = ["app", "core", "placeholder", "switcher"]
+members = ["app", "core", "switcher"]
 exclude = ["spikes"]
 resolver = "3"
 

@@ -117,10 +117,8 @@ cargo build --release
 cargo test
 ```
 
-This builds the three binaries in `target/release/`: `now-playing`,
-`now-playing-switcher` and
-[`now-playing-placeholder`](#the-placeholder-window). The switcher needs no
-system libraries; the placeholder, like Now Playing, links SDL3.
+This builds the two binaries in `target/release/`: `now-playing` and
+`now-playing-switcher`. The switcher needs no system libraries.
 
 The binary links the system libSDL3 and glibc, so build it against the
 same versions as the machine it runs on. For a Fedora-based target such
@@ -248,23 +246,6 @@ now-playing-switcher [--config PATH] [--dry-run]
 - `--dry-run`: log what it would do, without pausing, muting, waking
   Kodi, loading a profile or running the screensaver.
 
-## The placeholder window
-
-`now-playing-placeholder` is a full-screen black window for an app that
-opens none until it's used, such as UxPlay. It ignores input and quits on
-SIGTERM.
-
-```
-now-playing-placeholder [--image PATH] [--title TITLE]
-```
-
-- `--image`: a PNG or JPEG to draw in the middle of the screen. It's never
-  scaled: an image the size of the screen fills it, a smaller one is
-  centred on black, and a larger one is cropped. If it can't be loaded, the
-  window stays black. No image comes with it; for UxPlay, a white AirPlay
-  logo on black works well.
-- `--title`: the window's title. Defaults to `AirPlay`.
-
 ## Layout
 
 | Path | What's there |
@@ -290,7 +271,6 @@ now-playing-placeholder [--image PATH] [--title TITLE]
 | `switcher/src/windows.rs` | Following a display's windows, for UxPlay's |
 | `switcher/switcher.example.toml` | An example config |
 | `htpc/kodi-steam` | Launches Kodi from Steam, with UxPlay and the switcher |
-| `placeholder/` | The `now-playing-placeholder` crate: a window for UxPlay |
 | `spikes/sdl-hello/` | The SDL2 spike that tested gamescope |
 
 ## License
