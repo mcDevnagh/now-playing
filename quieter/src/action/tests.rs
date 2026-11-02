@@ -116,16 +116,34 @@ fn without_profiles_the_command_runs_until_the_screensaver_stops() {
 }
 
 #[test]
-fn a_profile_that_switches_loads_the_other() {
+fn a_profile_that_switches_wakes_kodi_then_loads_the_other() {
     let (mut dispatch, inbox, _rx) = with_screensaver(&["sleep", "30"], &[("Pop", "Kids")]);
     handle(&mut dispatch, Request::Screensaver(true));
     assert_eq!(inbox.take(), ["profile?"]);
     handle(&mut dispatch, Request::Profile("Pop".to_owned()));
-    assert_eq!(inbox.take(), ["load Kids"]);
+    // Not loaded under the screensaver.
+    assert_eq!(inbox.take(), ["noop"]);
     assert!(dispatch.child.is_none());
+    handle(&mut dispatch, Request::Screensaver(false));
+    assert_eq!(inbox.take(), ["load Kids"]);
+    // Only once.
+    handle(&mut dispatch, Request::Screensaver(false));
+    assert_eq!(inbox.take(), [] as [String; 0]);
     // The load drops the connection.
     handle(&mut dispatch, Request::KodiDisconnected);
     assert!(!dispatch.screensaver_up);
+}
+
+/// The connection dropping before Kodi woke, as Kodi exiting, drops the
+/// switch, so a later wake in a new connection doesn't load anything.
+#[test]
+fn losing_kodi_mid_switch_drops_it() {
+    let (mut dispatch, inbox, _rx) = with_screensaver(&["sleep", "30"], &[("Pop", "Kids")]);
+    handle(&mut dispatch, Request::Screensaver(true));
+    handle(&mut dispatch, Request::Profile("Pop".to_owned()));
+    handle(&mut dispatch, Request::KodiDisconnected);
+    handle(&mut dispatch, Request::Screensaver(false));
+    assert_eq!(inbox.take(), ["profile?", "noop"]);
 }
 
 #[test]
@@ -205,9 +223,11 @@ fn a_dry_run_runs_and_loads_nothing() {
     dispatch.dry_run = true;
     handle(&mut dispatch, Request::Screensaver(true));
     handle(&mut dispatch, Request::Profile("Pop".to_owned()));
+    handle(&mut dispatch, Request::Screensaver(false));
+    handle(&mut dispatch, Request::Screensaver(true));
     handle(&mut dispatch, Request::Profile("Kids".to_owned()));
     // Asking changes nothing, so it's asked even in a dry run.
-    assert_eq!(inbox.take(), ["profile?"]);
+    assert_eq!(inbox.take(), ["profile?", "profile?"]);
     assert!(dispatch.child.is_none());
 }
 

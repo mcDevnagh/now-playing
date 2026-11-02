@@ -52,6 +52,9 @@ pub struct Dispatch {
     child: Option<Child>,
     /// The last child's id.
     last_child: u64,
+    /// The profile to load once Kodi's screensaver has stopped, after
+    /// waking Kodi to switch to it.
+    switching: Option<String>,
     /// For children to report on; set by `run`.
     tx: Option<Sender<Request>>,
     dry_run: bool,
@@ -73,6 +76,7 @@ impl Dispatch {
             screensaver_up: false,
             child: None,
             last_child: 0,
+            switching: None,
             tx: None,
             dry_run: false,
         }
@@ -127,9 +131,15 @@ impl Dispatch {
             Request::Mirroring(open) => self.mirroring(open, now),
             Request::Screensaver(true) => self.screensaver_started(),
             Request::Profile(name) => self.profile(&name),
-            Request::Screensaver(false) | Request::KodiDisconnected => {
+            Request::Screensaver(false) => {
                 self.screensaver_up = false;
                 self.stop_child();
+                self.finish_switch();
+            }
+            Request::KodiDisconnected => {
+                self.screensaver_up = false;
+                self.stop_child();
+                self.switching = None;
             }
             Request::ScreensaverExited { id, status } => self.child_exited(id, &status),
         }
@@ -150,28 +160,44 @@ impl Dispatch {
     }
 
     /// Kodi's in profile `name`, as asked when its screensaver started:
-    /// loads the profile it switches to, if any, else starts the command.
-    /// The config never has a profile switch to itself, as Kodi loading
-    /// the profile it's in breaks it.
+    /// switches to the profile it switches to, if any, else starts the
+    /// command. The config never has a profile switch to itself, as Kodi
+    /// loading the profile it's in breaks it.
+    ///
+    /// Kodi is woken first, and the profile loaded once its screensaver
+    /// has stopped: a profile loaded under the screensaver leaves Kodi
+    /// black after the next profile's screensaver is woken from Kore,
+    /// with keys no longer waking it.
     fn profile(&mut self, name: &str) {
         // Stopped while we asked.
         if !self.screensaver_up {
             return;
         }
-        let (Some(screensaver), Some(kodi)) = (&self.screensaver, &self.kodi) else {
+        let Some(screensaver) = &self.screensaver else {
             return;
         };
         let Some(to) = screensaver.switch_to.get(name) else {
             return self.start_child();
         };
+        eprintln!(
+            "quieter: kodi's screensaver started in profile {name}; waking kodi to load {to}"
+        );
+        self.switching = Some(to.clone());
+        self.noop();
+    }
+
+    /// Loads the profile being switched to, now Kodi's screensaver has
+    /// stopped, if one is.
+    fn finish_switch(&mut self) {
+        let (Some(to), Some(kodi)) = (self.switching.take(), &self.kodi) else {
+            return;
+        };
         match self.dry_run {
             false => {
-                eprintln!("quieter: kodi's screensaver started in profile {name}; loading {to}");
-                kodi.load_profile(to);
+                eprintln!("quieter: kodi's awake; loading {to}");
+                kodi.load_profile(&to);
             }
-            true => eprintln!(
-                "quieter: kodi's screensaver started in profile {name}; dry run: would load {to}"
-            ),
+            true => eprintln!("quieter: kodi's awake; dry run: would load {to}"),
         }
     }
 

@@ -197,7 +197,9 @@ Guest's own screensaver then shows Now Playing after Guest's idle time.
 Loading a profile stops playback; a paused movie keeps its resume point.
 The quieter asks Kodi which profile it's in first, and never loads the
 one already loaded, which leaves Kodi without its JSON-RPC server until it
-restarts.
+restarts. It wakes Kodi, then loads the profile once Kodi's screensaver
+has stopped: a profile loaded under the screensaver left Kodi black, with
+keys no longer waking it, the next time a screensaver was ended from Kore.
 
 Kodi doesn't start its screensaver during a video, and music starting
 doesn't bring Now Playing up by itself, so music over a video stays behind
